@@ -4,6 +4,8 @@
  * fica armazenada no código do frontend.
  */
 export const MONGO_CONFIG = {
-  restApiUrl: import.meta.env.VITE_API_URL || 'http://localhost:5000/api',
+  restApiUrl:
+    import.meta.env.VITE_API_URL ||
+    (import.meta.env.PROD ? '/api' : 'http://localhost:5000/api'),
   database: 'sport_maker_db',
 };
