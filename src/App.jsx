@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, lazy, Suspense } from 'react';
 import {
   BrowserRouter,
   Routes,
@@ -9,12 +9,21 @@ import {
 } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import HomePage from './pages/HomePage';
-import LoginPage from './pages/LoginPage';
-import UserHomePage from './pages/UserHomePage';
-import OwnerHomePage from './pages/OwnerHomePage';
-import ArenaDetailsPage from './pages/ArenaDetailsPage';
 import MainLayout from './components/layout/MainLayout';
-import TermsOfServiceModal from './components/modals/TermsOfServiceModal';
+
+const LoginPage = lazy(() => import('./pages/LoginPage'));
+const UserHomePage = lazy(() => import('./pages/UserHomePage'));
+const OwnerHomePage = lazy(() => import('./pages/OwnerHomePage'));
+const ArenaDetailsPage = lazy(() => import('./pages/ArenaDetailsPage'));
+const TermsOfServiceModal = lazy(() => import('./components/modals/TermsOfServiceModal'));
+
+function PageLoader() {
+  return (
+    <div className="min-h-screen bg-dark-950 flex items-center justify-center">
+      <div className="w-8 h-8 rounded-full border-2 border-neon border-t-transparent animate-spin" />
+    </div>
+  );
+}
 
 function LoginRouteWrapper({ redirectReason, clearRedirectReason }) {
   const { roleParam } = useParams();
@@ -228,8 +237,12 @@ export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
-        <TermsOfServiceModal />
-        <AppRoutes />
+        <Suspense fallback={null}>
+          <TermsOfServiceModal />
+        </Suspense>
+        <Suspense fallback={<PageLoader />}>
+          <AppRoutes />
+        </Suspense>
       </BrowserRouter>
     </AuthProvider>
   );

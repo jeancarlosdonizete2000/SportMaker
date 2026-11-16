@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, useNavigate, NavLink } from 'react-router-dom';
 import { LogOut, RefreshCw } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -6,10 +6,19 @@ import { ownerService } from '../services/ownerService';
 import OwnerSidebar from '../components/layout/OwnerSidebar';
 import OwnerMobileBottomNav from '../components/layout/OwnerMobileBottomNav';
 import OwnerEarningsTab from '../components/owner/OwnerEarningsTab';
-import OwnerScheduleTab from '../components/owner/OwnerScheduleTab';
-import OwnerArenasConfigTab from '../components/owner/OwnerArenasConfigTab';
-import OwnerNewBookingModal from '../components/owner/OwnerNewBookingModal';
-import AccountSettingsTab from '../components/dashboard/AccountSettingsTab';
+
+const OwnerScheduleTab = lazy(() => import('../components/owner/OwnerScheduleTab'));
+const OwnerArenasConfigTab = lazy(() => import('../components/owner/OwnerArenasConfigTab'));
+const OwnerNewBookingModal = lazy(() => import('../components/owner/OwnerNewBookingModal'));
+const AccountSettingsTab = lazy(() => import('../components/dashboard/AccountSettingsTab'));
+
+function OwnerTabLoader() {
+  return (
+    <div className="py-16 flex items-center justify-center">
+      <div className="w-7 h-7 rounded-full border-2 border-emerald-400 border-t-transparent animate-spin" />
+    </div>
+  );
+}
 
 export default function OwnerHomePage() {
   const { user, logout } = useAuth();
@@ -143,50 +152,52 @@ export default function OwnerHomePage() {
       {/* Main Content Area */}
       <main className="md:pl-64 lg:pl-72 relative z-10">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 md:pt-8">
-          <Routes>
-            <Route index element={<Navigate to="ganhos" replace />} />
-            <Route
-              path="ganhos"
-              element={
-                <OwnerEarningsTab
-                  arenas={arenas}
-                  bookings={bookings}
-                  metrics={metrics}
-                  onGoToSchedule={() => navigate('/proprietario/horarios')}
-                  onGoToArenas={() => navigate('/proprietario/arenas')}
-                  onMarkBookingPaid={(id) =>
-                    handleUpdateBookingStatus(id, { paymentStatus: 'paid' })
-                  }
-                />
-              }
-            />
-            <Route
-              path="horarios"
-              element={
-                <OwnerScheduleTab
-                  arenas={arenas}
-                  bookings={bookings}
-                  onOpenNewBookingModal={(arena) =>
-                    setModalArena(arena || arenas[0] || null)
-                  }
-                  onToggleSlotStatus={handleToggleSlotStatus}
-                  onUpdateBookingStatus={handleUpdateBookingStatus}
-                />
-              }
-            />
-            <Route
-              path="arenas"
-              element={
-                <OwnerArenasConfigTab
-                  arenas={arenas}
-                  onSaveArena={handleSaveArena}
-                  onCreateArena={handleCreateArena}
-                />
-              }
-            />
-            <Route path="configuracoes" element={<AccountSettingsTab />} />
-            <Route path="*" element={<Navigate to="ganhos" replace />} />
-          </Routes>
+          <Suspense fallback={<OwnerTabLoader />}>
+            <Routes>
+              <Route index element={<Navigate to="ganhos" replace />} />
+              <Route
+                path="ganhos"
+                element={
+                  <OwnerEarningsTab
+                    arenas={arenas}
+                    bookings={bookings}
+                    metrics={metrics}
+                    onGoToSchedule={() => navigate('/proprietario/horarios')}
+                    onGoToArenas={() => navigate('/proprietario/arenas')}
+                    onMarkBookingPaid={(id) =>
+                      handleUpdateBookingStatus(id, { paymentStatus: 'paid' })
+                    }
+                  />
+                }
+              />
+              <Route
+                path="horarios"
+                element={
+                  <OwnerScheduleTab
+                    arenas={arenas}
+                    bookings={bookings}
+                    onOpenNewBookingModal={(arena) =>
+                      setModalArena(arena || arenas[0] || null)
+                    }
+                    onToggleSlotStatus={handleToggleSlotStatus}
+                    onUpdateBookingStatus={handleUpdateBookingStatus}
+                  />
+                }
+              />
+              <Route
+                path="arenas"
+                element={
+                  <OwnerArenasConfigTab
+                    arenas={arenas}
+                    onSaveArena={handleSaveArena}
+                    onCreateArena={handleCreateArena}
+                  />
+                }
+              />
+              <Route path="configuracoes" element={<AccountSettingsTab />} />
+              <Route path="*" element={<Navigate to="ganhos" replace />} />
+            </Routes>
+          </Suspense>
         </div>
       </main>
 
@@ -197,12 +208,16 @@ export default function OwnerHomePage() {
       />
 
       {/* Modal para Marcar Horário no Quadro */}
-      <OwnerNewBookingModal
-        isOpen={Boolean(modalArena)}
-        arena={modalArena}
-        onClose={() => setModalArena(null)}
-        onConfirmBooking={handleConfirmNewBooking}
-      />
+      <Suspense fallback={null}>
+        {modalArena && (
+          <OwnerNewBookingModal
+            isOpen={Boolean(modalArena)}
+            arena={modalArena}
+            onClose={() => setModalArena(null)}
+            onConfirmBooking={handleConfirmNewBooking}
+          />
+        )}
+      </Suspense>
     </div>
   );
 }

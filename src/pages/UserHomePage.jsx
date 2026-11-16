@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, useNavigate, NavLink } from 'react-router-dom';
 import { LogOut } from 'lucide-react';
 import { ARENAS_DATA, OPEN_LOBBIES, MY_MATCHES_INITIAL } from '../data/mockData';
@@ -10,19 +10,28 @@ import {
   calculateHaversineDistanceKm,
 } from '../services/locationService';
 import ArenasHomeTab from '../components/dashboard/ArenasHomeTab';
-import PublicLobbiesTab from '../components/dashboard/PublicLobbiesTab';
-import MyMatchesTab from '../components/dashboard/MyMatchesTab';
-import FriendsTab from '../components/dashboard/FriendsTab';
-import ProfileTab from '../components/dashboard/ProfileTab';
-import ProSubscriptionTab from '../components/dashboard/ProSubscriptionTab';
-import AccountSettingsTab from '../components/dashboard/AccountSettingsTab';
-import BookingModal from '../components/modals/BookingModal';
-import CreateMatchModal from '../components/modals/CreateMatchModal';
-import LocationConsentModal from '../components/modals/LocationConsentModal';
 import MobileBottomNav from '../components/layout/MobileBottomNav';
 import UserSidebar from '../components/layout/UserSidebar';
-import ArenaDetailsPage from './ArenaDetailsPage';
-import MatchEvaluationPage from './MatchEvaluationPage';
+
+const PublicLobbiesTab = lazy(() => import('../components/dashboard/PublicLobbiesTab'));
+const MyMatchesTab = lazy(() => import('../components/dashboard/MyMatchesTab'));
+const FriendsTab = lazy(() => import('../components/dashboard/FriendsTab'));
+const ProfileTab = lazy(() => import('../components/dashboard/ProfileTab'));
+const ProSubscriptionTab = lazy(() => import('../components/dashboard/ProSubscriptionTab'));
+const AccountSettingsTab = lazy(() => import('../components/dashboard/AccountSettingsTab'));
+const ArenaDetailsPage = lazy(() => import('./ArenaDetailsPage'));
+const MatchEvaluationPage = lazy(() => import('./MatchEvaluationPage'));
+const BookingModal = lazy(() => import('../components/modals/BookingModal'));
+const CreateMatchModal = lazy(() => import('../components/modals/CreateMatchModal'));
+const LocationConsentModal = lazy(() => import('../components/modals/LocationConsentModal'));
+
+function TabLoader() {
+  return (
+    <div className="py-16 flex items-center justify-center">
+      <div className="w-7 h-7 rounded-full border-2 border-neon border-t-transparent animate-spin" />
+    </div>
+  );
+}
 
 export default function UserHomePage({
   pendingAction,
@@ -360,75 +369,77 @@ export default function UserHomePage({
       {/* Main Content Area shifted right on Desktop for Sidebar */}
       <main className="md:pl-64 lg:pl-72 relative z-10">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 md:pt-8">
-          <Routes>
-            <Route index element={<Navigate to="arenas" replace />} />
-            <Route
-              path="arenas"
-              element={
-                <ArenasHomeTab
-                  arenas={filteredArenas}
-                  selectedCategory={selectedCategory}
-                  onCategoryChange={setSelectedCategory}
-                  searchQuery={searchQuery}
-                  onSearchChange={setSearchQuery}
-                  maxRadius={maxRadius}
-                  onRadiusChange={setMaxRadius}
-                  userLocation={userLocation}
-                  onOpenLocationModal={() => setLocationModalOpen(true)}
-                  onOpenArenaDetails={(arenaId) => {
-                    navigate(`/app/arena/${arenaId}`);
-                    window.scrollTo({ top: 0, behavior: 'smooth' });
-                  }}
-                />
-              }
-            />
-            <Route
-              path="arena/:arenaId"
-              element={
-                <ArenaDetailsPage
-                  arenas={allArenas}
-                  selectedSlots={selectedSlots}
-                  onSelectSlot={handleSelectSlot}
-                  onScheduleMatch={handleOpenBooking}
-                />
-              }
-            />
-            <Route
-              path="lobbies"
-              element={
-                <PublicLobbiesTab
-                  lobbies={publicLobbies}
-                  requestedLobbyIds={requestedLobbyIds}
-                  onRequestJoinLobby={handleRequestJoinLobby}
-                  onOpenCreateMatch={() => setCreateMatchModalOpen(true)}
-                />
-              }
-            />
-            <Route
-              path="minhas-partidas"
-              element={
-                <MyMatchesTab
-                  myMatches={myMatches}
-                  onOpenCreateMatch={() => setCreateMatchModalOpen(true)}
-                  onCancelMatch={handleCancelMatch}
-                />
-              }
-            />
-            <Route
-              path="avaliar/:matchId"
-              element={
-                <MatchEvaluationPage
-                  myMatches={myMatches}
-                  onEvaluationComplete={handleEvaluationComplete}
-                />
-              }
-            />
-            <Route path="amigos" element={<FriendsTab />} />
-            <Route path="perfil" element={<ProfileTab />} />
-            <Route path="seja-pro" element={<ProSubscriptionTab />} />
-            <Route path="configuracoes" element={<AccountSettingsTab />} />
-            <Route path="*" element={<Navigate to="arenas" replace />} />
-          </Routes>
+          <Suspense fallback={<TabLoader />}>
+            <Routes>
+              <Route index element={<Navigate to="arenas" replace />} />
+              <Route
+                path="arenas"
+                element={
+                  <ArenasHomeTab
+                    arenas={filteredArenas}
+                    selectedCategory={selectedCategory}
+                    onCategoryChange={setSelectedCategory}
+                    searchQuery={searchQuery}
+                    onSearchChange={setSearchQuery}
+                    maxRadius={maxRadius}
+                    onRadiusChange={setMaxRadius}
+                    userLocation={userLocation}
+                    onOpenLocationModal={() => setLocationModalOpen(true)}
+                    onOpenArenaDetails={(arenaId) => {
+                      navigate(`/app/arena/${arenaId}`);
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
+                  />
+                }
+              />
+              <Route
+                path="arena/:arenaId"
+                element={
+                  <ArenaDetailsPage
+                    arenas={allArenas}
+                    selectedSlots={selectedSlots}
+                    onSelectSlot={handleSelectSlot}
+                    onScheduleMatch={handleOpenBooking}
+                  />
+                }
+              />
+              <Route
+                path="lobbies"
+                element={
+                  <PublicLobbiesTab
+                    lobbies={publicLobbies}
+                    requestedLobbyIds={requestedLobbyIds}
+                    onRequestJoinLobby={handleRequestJoinLobby}
+                    onOpenCreateMatch={() => setCreateMatchModalOpen(true)}
+                  />
+                }
+              />
+              <Route
+                path="minhas-partidas"
+                element={
+                  <MyMatchesTab
+                    myMatches={myMatches}
+                    onOpenCreateMatch={() => setCreateMatchModalOpen(true)}
+                    onCancelMatch={handleCancelMatch}
+                  />
+                }
+              />
+              <Route
+                path="avaliar/:matchId"
+                element={
+                  <MatchEvaluationPage
+                    myMatches={myMatches}
+                    onEvaluationComplete={handleEvaluationComplete}
+                  />
+                }
+              />
+              <Route path="amigos" element={<FriendsTab />} />
+              <Route path="perfil" element={<ProfileTab />} />
+              <Route path="seja-pro" element={<ProSubscriptionTab />} />
+              <Route path="configuracoes" element={<AccountSettingsTab />} />
+              <Route path="*" element={<Navigate to="arenas" replace />} />
+            </Routes>
+          </Suspense>
         </div>
       </main>
 
@@ -436,34 +447,42 @@ export default function UserHomePage({
       <MobileBottomNav myMatchesCount={myMatches.length} />
 
       {/* Modals */}
-      <BookingModal
-        arena={activeBookingArena}
-        selectedSlot={activeBookingArena ? selectedSlots[activeBookingArena.id] : null}
-        selectedProducts={selectedProducts}
-        splitWithFriends={splitWithFriends}
-        bookingConfirmed={bookingConfirmed}
-        totalAmount={totalAmount}
-        isPro={isPro}
-        onClose={handleCloseBooking}
-        onToggleProduct={toggleProduct}
-        onToggleSplit={toggleSplitWithFriends}
-        onConfirm={handleConfirmArenaBooking}
-      />
+      <Suspense fallback={null}>
+        {activeBookingArena && (
+          <BookingModal
+            arena={activeBookingArena}
+            selectedSlot={activeBookingArena ? selectedSlots[activeBookingArena.id] : null}
+            selectedProducts={selectedProducts}
+            splitWithFriends={splitWithFriends}
+            bookingConfirmed={bookingConfirmed}
+            totalAmount={totalAmount}
+            isPro={isPro}
+            onClose={handleCloseBooking}
+            onToggleProduct={toggleProduct}
+            onToggleSplit={toggleSplitWithFriends}
+            onConfirm={handleConfirmArenaBooking}
+          />
+        )}
 
-      <CreateMatchModal
-        isOpen={createMatchModalOpen}
-        onClose={() => setCreateMatchModalOpen(false)}
-        onCreateMatch={handleCreateMatch}
-        currentUser={user}
-      />
+        {createMatchModalOpen && (
+          <CreateMatchModal
+            isOpen={createMatchModalOpen}
+            onClose={() => setCreateMatchModalOpen(false)}
+            onCreateMatch={handleCreateMatch}
+            currentUser={user}
+          />
+        )}
 
-      <LocationConsentModal
-        isOpen={locationModalOpen}
-        onClose={() => setLocationModalOpen(false)}
-        currentLocation={userLocation}
-        initialConsentAccepted={locationConsentAccepted}
-        onConfirmLocation={handleConfirmUserLocation}
-      />
+        {locationModalOpen && (
+          <LocationConsentModal
+            isOpen={locationModalOpen}
+            onClose={() => setLocationModalOpen(false)}
+            currentLocation={userLocation}
+            initialConsentAccepted={locationConsentAccepted}
+            onConfirmLocation={handleConfirmUserLocation}
+          />
+        )}
+      </Suspense>
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, lazy, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ARENAS_DATA, OPEN_LOBBIES } from '../data/mockData';
 import { useBooking } from '../hooks/useBooking';
@@ -6,18 +6,19 @@ import { useAuth } from '../context/AuthContext';
 import MainLayout from '../components/layout/MainLayout';
 import HeroSection from '../components/sections/HeroSection';
 import ArenaExplorerSection from '../components/sections/ArenaExplorerSection';
-import PlayerProfileSection from '../components/sections/PlayerProfileSection';
-import CommunitySection from '../components/sections/CommunitySection';
-import EvaluationShowcaseSection from '../components/sections/EvaluationShowcaseSection';
-import ArenaOwnersSection from '../components/sections/ArenaOwnersSection';
-import BookingModal from '../components/modals/BookingModal';
-import CreateMatchModal from '../components/modals/CreateMatchModal';
-import LocationConsentModal from '../components/modals/LocationConsentModal';
 import {
   locationService,
   calculateHaversineDistanceKm,
 } from '../services/locationService';
 import { ownerService } from '../services/ownerService';
+
+const PlayerProfileSection = lazy(() => import('../components/sections/PlayerProfileSection'));
+const CommunitySection = lazy(() => import('../components/sections/CommunitySection'));
+const EvaluationShowcaseSection = lazy(() => import('../components/sections/EvaluationShowcaseSection'));
+const ArenaOwnersSection = lazy(() => import('../components/sections/ArenaOwnersSection'));
+const BookingModal = lazy(() => import('../components/modals/BookingModal'));
+const CreateMatchModal = lazy(() => import('../components/modals/CreateMatchModal'));
+const LocationConsentModal = lazy(() => import('../components/modals/LocationConsentModal'));
 
 export default function HomePage({
   onRequireAuth,
@@ -221,50 +222,60 @@ export default function HomePage({
         onViewArenaDetails={handleViewArenaDetails}
       />
 
-      <PlayerProfileSection />
+      <Suspense fallback={null}>
+        <PlayerProfileSection />
 
-      <CommunitySection
-        lobbies={lobbies}
-        onCreateMatchClick={handleProtectedCreateMatch}
-      />
+        <CommunitySection
+          lobbies={lobbies}
+          onCreateMatchClick={handleProtectedCreateMatch}
+        />
 
-      <EvaluationShowcaseSection />
+        <EvaluationShowcaseSection />
 
-      <ArenaOwnersSection
-        onSimulateCheckout={handleProtectedBooking}
-        onOwnerLogin={() => onNavigateLogin('owner')}
-      />
+        <ArenaOwnersSection
+          onSimulateCheckout={handleProtectedBooking}
+          onOwnerLogin={() => onNavigateLogin('owner')}
+        />
+      </Suspense>
 
-      <BookingModal
-        arena={activeBookingArena}
-        selectedSlot={activeBookingArena ? selectedSlots[activeBookingArena.id] : null}
-        selectedProducts={selectedProducts}
-        splitWithFriends={splitWithFriends}
-        bookingConfirmed={bookingConfirmed}
-        totalAmount={totalAmount}
-        onClose={handleCloseBooking}
-        onToggleProduct={toggleProduct}
-        onToggleSplit={toggleSplitWithFriends}
-        onConfirm={confirmBooking}
-      />
+      <Suspense fallback={null}>
+        {activeBookingArena && (
+          <BookingModal
+            arena={activeBookingArena}
+            selectedSlot={activeBookingArena ? selectedSlots[activeBookingArena.id] : null}
+            selectedProducts={selectedProducts}
+            splitWithFriends={splitWithFriends}
+            bookingConfirmed={bookingConfirmed}
+            totalAmount={totalAmount}
+            onClose={handleCloseBooking}
+            onToggleProduct={toggleProduct}
+            onToggleSplit={toggleSplitWithFriends}
+            onConfirm={confirmBooking}
+          />
+        )}
 
-      <CreateMatchModal
-        isOpen={createMatchModalOpen}
-        onClose={() => setCreateMatchModalOpen(false)}
-        onCreateMatch={handleAddCreatedMatch}
-        currentUser={user}
-      />
+        {createMatchModalOpen && (
+          <CreateMatchModal
+            isOpen={createMatchModalOpen}
+            onClose={() => setCreateMatchModalOpen(false)}
+            onCreateMatch={handleAddCreatedMatch}
+            currentUser={user}
+          />
+        )}
 
-      <LocationConsentModal
-        isOpen={locationModalOpen}
-        onClose={() => setLocationModalOpen(false)}
-        currentLocation={userLocation}
-        initialConsentAccepted={locationConsentAccepted}
-        onConfirmLocation={(newLoc, accepted) => {
-          setUserLocation(newLoc);
-          setLocationConsentAccepted(Boolean(accepted));
-        }}
-      />
+        {locationModalOpen && (
+          <LocationConsentModal
+            isOpen={locationModalOpen}
+            onClose={() => setLocationModalOpen(false)}
+            currentLocation={userLocation}
+            initialConsentAccepted={locationConsentAccepted}
+            onConfirmLocation={(newLoc, accepted) => {
+              setUserLocation(newLoc);
+              setLocationConsentAccepted(Boolean(accepted));
+            }}
+          />
+        )}
+      </Suspense>
     </MainLayout>
   );
 }
