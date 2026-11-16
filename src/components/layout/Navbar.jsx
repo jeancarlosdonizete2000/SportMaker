@@ -77,12 +77,26 @@ export default function Navbar({ onNavigateLogin, onCreateMatchClick, onEnterUse
             </>
           ) : (
             <div className="flex items-center gap-2.5 pl-2 pr-3 py-1.5 rounded-xl bg-white/5 border border-white/10">
-              <img
-                src={user.avatar}
-                alt={user.name}
-                onClick={onEnterUserHome}
-                className="w-7 h-7 rounded-full object-cover border border-neon cursor-pointer"
-              />
+              {user.avatar ? (
+                <img
+                  src={user.avatar}
+                  alt={user.name}
+                  onClick={onEnterUserHome}
+                  className="w-7 h-7 rounded-full object-cover border border-neon cursor-pointer"
+                />
+              ) : (
+                <div
+                  onClick={onEnterUserHome}
+                  className="w-7 h-7 rounded-full bg-dark-900 border border-neon flex items-center justify-center text-[10px] font-display font-black text-neon cursor-pointer"
+                >
+                  {(user.name || 'AT')
+                    .split(' ')
+                    .slice(0, 2)
+                    .map((n) => n[0])
+                    .join('')
+                    .toUpperCase()}
+                </div>
+              )}
               <div onClick={onEnterUserHome} className="text-left cursor-pointer">
                 <p className="text-xs font-bold text-white leading-none">{user.name}</p>
                 <span className="text-[10px] text-neon font-semibold uppercase">
@@ -116,11 +130,22 @@ export default function Navbar({ onNavigateLogin, onCreateMatchClick, onEnterUse
           {isAuthenticated ? (
             <div className="flex items-center justify-between p-3 rounded-xl bg-neon/10 border border-neon/30">
               <div className="flex items-center gap-2.5">
-                <img
-                  src={user.avatar}
-                  alt={user.name}
-                  className="w-9 h-9 rounded-full object-cover border border-neon"
-                />
+                {user.avatar ? (
+                  <img
+                    src={user.avatar}
+                    alt={user.name}
+                    className="w-9 h-9 rounded-full object-cover border border-neon"
+                  />
+                ) : (
+                  <div className="w-9 h-9 rounded-full bg-dark-900 border border-neon flex items-center justify-center text-xs font-display font-black text-neon">
+                    {(user.name || 'AT')
+                      .split(' ')
+                      .slice(0, 2)
+                      .map((n) => n[0])
+                      .join('')
+                      .toUpperCase()}
+                  </div>
+                )}
                 <div>
                   <p className="text-xs font-bold text-white">{user.name}</p>
                   <p className="text-[10px] text-neon font-semibold uppercase">

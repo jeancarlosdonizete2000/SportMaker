@@ -1,7 +1,6 @@
 import React, { useState, useMemo, useEffect, lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, useNavigate, NavLink } from 'react-router-dom';
 import { LogOut } from 'lucide-react';
-import { ARENAS_DATA, OPEN_LOBBIES, MY_MATCHES_INITIAL } from '../data/mockData';
 import { useAuth } from '../context/AuthContext';
 import { useBooking } from '../hooks/useBooking';
 import { ownerService } from '../services/ownerService';
@@ -84,7 +83,7 @@ export default function UserHomePage({
     }
   };
 
-  // Load MongoDB Arenas created/configured by Owners
+  // Load MongoDB Arenas, Public Lobbies, and User Matches
   useEffect(() => {
     ownerService
       .getPublicArenas()
@@ -98,22 +97,35 @@ export default function UserHomePage({
           );
         }
       })
-      .catch(() => { });
-  }, []);
+      .catch(() => {});
+
+    ownerService
+      .getPublicLobbies()
+      .then((list) => {
+        if (Array.isArray(list)) {
+          setPublicLobbies(list);
+        }
+      })
+      .catch(() => {});
+
+    ownerService
+      .getMyMatches()
+      .then((list) => {
+        if (Array.isArray(list)) {
+          setMyMatches(list);
+          setRequestedLobbyIds(
+            list
+              .filter((m) => String(m.hostId) !== String(user?._id))
+              .map((m) => String(m.id))
+          );
+        }
+      })
+      .catch(() => {});
+  }, [user?._id]);
 
   const allArenas = useMemo(() => {
-    const baseList =
-      dbArenas.length === 0
-        ? ARENAS_DATA
-        : [
-          ...dbArenas,
-          ...ARENAS_DATA.filter(
-            (m) => !new Set(dbArenas.map((a) => a.name.toLowerCase())).has(m.name.toLowerCase())
-          ),
-        ];
-
     // Recalcula a distância em km se o usuário forneceu localização (GPS ou Manual)
-    return baseList
+    return dbArenas
       .map((arena) => {
         if (
           userLocation?.lat &&
@@ -140,10 +152,10 @@ export default function UserHomePage({
       .sort((a, b) => (a.distanceKmValue ?? 99) - (b.distanceKmValue ?? 99));
   }, [dbArenas, userLocation]);
 
-  // Lobbies & My Matches State
-  const [publicLobbies, setPublicLobbies] = useState(OPEN_LOBBIES);
+  // Lobbies & My Matches State (Iniciam vazios para novas contas, carregados do MongoDB)
+  const [publicLobbies, setPublicLobbies] = useState([]);
   const [requestedLobbyIds, setRequestedLobbyIds] = useState([]);
-  const [myMatches, setMyMatches] = useState(MY_MATCHES_INITIAL);
+  const [myMatches, setMyMatches] = useState([]);
   const [createMatchModalOpen, setCreateMatchModalOpen] = useState(false);
 
   // Booking Hook
@@ -191,57 +203,58 @@ export default function UserHomePage({
   }, [allArenas, selectedCategory, searchQuery, userLocation, maxRadius]);
 
   // Handle Request Entry in Public Lobby
-  const handleRequestJoinLobby = (lobby) => {
-    if (requestedLobbyIds.includes(lobby.id)) {
-      setRequestedLobbyIds((prev) => prev.filter((id) => id !== lobby.id));
-      setMyMatches((prev) => prev.filter((m) => m.id !== `req_${lobby.id}`));
-    } else {
-      setRequestedLobbyIds((prev) => [...prev, lobby.id]);
-      setMyMatches((prev) => [
-        {
-          id: `req_${lobby.id}`,
-          title: lobby.title,
-          arena: lobby.arena,
-          neighborhood: `A ${lobby.distance} de você`,
-          date: lobby.time,
-          role: isPro
-            ? `⚡ Prioridade PRO na Fila (Host: ${lobby.host.name})`
-            : `Solicitante (Host: ${lobby.host.name})`,
-          status: isPro
-            ? 'Prioridade VIP Confirmada • Topo da Fila'
-            : 'Solicitação Enviada • Aguardando Host',
-          playersCount: `${lobby.filledSlots + 1}/${lobby.totalSlots}`,
-          pricePerPlayer: lobby.pricePerPlayer,
-          extras: [],
-        },
-        ...prev,
-      ]);
+  const handleRequestJoinLobby = async (lobby) => {
+    try {
+      const res = await ownerService.toggleJoinLobby(lobby.id);
+      if (res.joined) {
+        setRequestedLobbyIds((prev) => [...prev, lobby.id]);
+        setMyMatches((prev) => [res.match, ...prev.filter((m) => m.id !== res.match.id)]);
+      } else {
+        setRequestedLobbyIds((prev) => prev.filter((id) => id !== lobby.id));
+        setMyMatches((prev) => prev.filter((m) => m.id !== lobby.id));
+      }
+      setPublicLobbies((prev) =>
+        prev.map((l) => (l.id === lobby.id ? res.match : l))
+      );
+    } catch {
+      // Fallback local
     }
   };
 
   // Handle Creating a New Match
-  const handleCreateMatch = (newLobby) => {
-    setPublicLobbies((prev) => [newLobby, ...prev]);
-    setMyMatches((prev) => [
-      {
-        id: `my_${newLobby.id}`,
-        title: newLobby.title,
-        arena: newLobby.arena,
-        neighborhood: `Distância ${newLobby.distance}`,
-        date: newLobby.time,
+  const handleCreateMatch = async (newLobby) => {
+    try {
+      const created = await ownerService.createMatch({
+        ...newLobby,
+        isPublicLobby: true,
         role: 'Organizador (Host)',
         status: 'Partida Publicada no Lobby',
-        playersCount: `${newLobby.filledSlots}/${newLobby.totalSlots}`,
-        pricePerPlayer: newLobby.pricePerPlayer,
-        extras: ['Lobby Público Ativo'],
-      },
-      ...prev,
-    ]);
+      });
+      setPublicLobbies((prev) => [created, ...prev]);
+      setMyMatches((prev) => [created, ...prev]);
+    } catch {
+      setPublicLobbies((prev) => [newLobby, ...prev]);
+      setMyMatches((prev) => [
+        {
+          id: `my_${newLobby.id}`,
+          title: newLobby.title,
+          arena: newLobby.arena,
+          neighborhood: `Distância ${newLobby.distance}`,
+          date: newLobby.time,
+          role: 'Organizador (Host)',
+          status: 'Partida Publicada no Lobby',
+          playersCount: `${newLobby.filledSlots}/${newLobby.totalSlots}`,
+          pricePerPlayer: newLobby.pricePerPlayer,
+          extras: ['Lobby Público Ativo'],
+        },
+        ...prev,
+      ]);
+    }
     navigate('/app/minhas-partidas');
   };
 
   // Handle Confirming an Arena Booking and Adding to My Matches + MongoDB Owner Schedule
-  const handleConfirmArenaBooking = () => {
+  const handleConfirmArenaBooking = async () => {
     confirmBooking();
     if (activeBookingArena) {
       const slot = selectedSlots[activeBookingArena.id] || '19:00';
@@ -280,31 +293,50 @@ export default function UserHomePage({
           .catch(() => { });
       }
 
-      setMyMatches((prev) => [
-        {
-          id: `book_${Date.now()}`,
-          title: `Reserva Oficial • ${activeBookingArena.selectedCourtName ||
-            activeBookingArena.sportLabel.split('•')[0]
-            }`,
-          arena: activeBookingArena.name,
-          neighborhood: `${activeBookingArena.neighborhood}${activeBookingArena.selectedSurface
-              ? ` • ${activeBookingArena.selectedSurface}`
-              : ''
-            }`,
-          date: `${activeBookingArena.selectedDate || 'Hoje'}, ${slot}`,
-          role: 'Responsável pela Reserva',
-          status: 'Confirmada',
-          playersCount: 'Convocação Aberta',
-          pricePerPlayer: activeBookingArena.pricePerPlayer,
-          extras: chosenProductNames,
-        },
-        ...prev,
-      ]);
+      const matchPayload = {
+        title: `Reserva Oficial • ${
+          activeBookingArena.selectedCourtName ||
+          activeBookingArena.sportLabel.split('•')[0]
+        }`,
+        arenaId: String(activeBookingArena._id || activeBookingArena.id || ''),
+        arena: activeBookingArena.name,
+        neighborhood: `${activeBookingArena.neighborhood}${
+          activeBookingArena.selectedSurface
+            ? ` • ${activeBookingArena.selectedSurface}`
+            : ''
+        }`,
+        distance: activeBookingArena.distance || '1.5 km',
+        time: `${activeBookingArena.selectedDate || 'Hoje'}, ${slot}`,
+        role: 'Responsável pela Reserva',
+        status: 'Confirmada',
+        totalSlots: 14,
+        filledSlots: 1,
+        pricePerPlayer: activeBookingArena.pricePerPlayer,
+        extras: chosenProductNames,
+        isPublicLobby: false,
+      };
+
+      try {
+        const savedMatch = await ownerService.createMatch(matchPayload);
+        setMyMatches((prev) => [savedMatch, ...prev]);
+      } catch {
+        setMyMatches((prev) => [
+          {
+            id: `book_${Date.now()}`,
+            ...matchPayload,
+            date: matchPayload.time,
+            playersCount: 'Convocação Aberta',
+          },
+          ...prev,
+        ]);
+      }
     }
   };
 
-  const handleCancelMatch = (matchId) => {
+  const handleCancelMatch = async (matchId) => {
+    await ownerService.cancelMatch(matchId).catch(() => {});
     setMyMatches((prev) => prev.filter((m) => m.id !== matchId));
+    setPublicLobbies((prev) => prev.filter((l) => l.id !== matchId));
   };
 
   const handleEvaluationComplete = (matchId, evalSummary) => {
@@ -349,11 +381,22 @@ export default function UserHomePage({
 
           <div className="flex items-center gap-2">
             <NavLink to="/app/perfil">
-              <img
-                src={user?.avatar}
-                alt={user?.name}
-                className="w-8 h-8 rounded-full object-cover border border-neon cursor-pointer"
-              />
+              {user?.avatar ? (
+                <img
+                  src={user.avatar}
+                  alt={user?.name}
+                  className="w-8 h-8 rounded-full object-cover border border-neon cursor-pointer"
+                />
+              ) : (
+                <div className="w-8 h-8 rounded-full bg-dark-900 border border-neon flex items-center justify-center text-[10px] font-display font-black text-neon cursor-pointer">
+                  {(user?.name || 'AT')
+                    .split(' ')
+                    .slice(0, 2)
+                    .map((n) => n[0])
+                    .join('')
+                    .toUpperCase()}
+                </div>
+              )}
             </NavLink>
             <button
               onClick={handleLogout}
@@ -377,6 +420,7 @@ export default function UserHomePage({
                 element={
                   <ArenasHomeTab
                     arenas={filteredArenas}
+                    allArenas={allArenas}
                     selectedCategory={selectedCategory}
                     onCategoryChange={setSelectedCategory}
                     searchQuery={searchQuery}
@@ -470,6 +514,7 @@ export default function UserHomePage({
             onClose={() => setCreateMatchModalOpen(false)}
             onCreateMatch={handleCreateMatch}
             currentUser={user}
+            arenas={allArenas}
           />
         )}
 

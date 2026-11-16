@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -12,8 +12,8 @@ import {
   Crown,
   Zap,
 } from 'lucide-react';
-import { FRIENDS_DATA } from '../data/mockData';
 import { MONGO_CONFIG } from '../services/mongoClient';
+import { ownerService } from '../services/ownerService';
 
 const ARENA_TIERS = [
   {
@@ -110,20 +110,44 @@ export default function MatchEvaluationPage({ myMatches = [], onEvaluationComple
 
   const [arenaStars, setArenaStars] = useState(5);
   const [arenaComment, setArenaComment] = useState('');
-  const [mvpPlayerId, setMvpPlayerId] = useState(FRIENDS_DATA[0].id);
+  const [mvpPlayerId, setMvpPlayerId] = useState(null);
 
-  // Notas de 0 a 10 e emblemas por jogador
-  const [playerEvaluations, setPlayerEvaluations] = useState(() =>
-    FRIENDS_DATA.map((p) => ({
-      id: p.id,
+  // Notas de 0 a 10 e emblemas por jogador (baseado nos participantes reais da partida ou amigos reais do usuário)
+  const [playerEvaluations, setPlayerEvaluations] = useState([]);
+
+  useEffect(() => {
+    const participants = (match?.participants || []).map((p) => ({
+      id: p.userId || p.id,
       name: p.name,
-      avatar: p.avatar,
-      sport: p.sport,
-      ovr: p.ovr,
+      avatar: p.avatar || '',
+      sport: p.role || 'Atleta da Partida',
+      ovr: p.ovr ?? 0,
       score: 8.5,
-      badges: ['artilheiro'],
-    }))
-  );
+      badges: ['Fair Play'],
+    }));
+
+    if (participants.length > 0) {
+      setPlayerEvaluations(participants);
+      setMvpPlayerId(participants[0].id);
+    } else {
+      ownerService
+        .getFriendsData()
+        .then((data) => {
+          const friendsList = (data.friends || []).map((f) => ({
+            id: f.id,
+            name: f.name,
+            avatar: f.avatar,
+            sport: f.sport || 'Atleta',
+            ovr: f.ovr || 88,
+            score: 8.5,
+            badges: ['Fair Play'],
+          }));
+          setPlayerEvaluations(friendsList);
+          if (friendsList.length > 0) setMvpPlayerId(friendsList[0].id);
+        })
+        .catch(() => {});
+    }
+  }, [match]);
 
   const [submitting, setSubmitting] = useState(false);
   const [submittedResult, setSubmittedResult] = useState(null);
@@ -168,9 +192,13 @@ export default function MatchEvaluationPage({ myMatches = [], onEvaluationComple
     setSubmitting(true);
 
     try {
+      const token = localStorage.getItem('sportmaker_token');
       const response = await fetch(`${MONGO_CONFIG.restApiUrl}/evaluations`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({
           matchId: match?.id,
           arenaName: match?.arena,
@@ -355,8 +383,13 @@ export default function MatchEvaluationPage({ myMatches = [], onEvaluationComple
             </h2>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            {playerEvaluations.map((player) => {
+          {playerEvaluations.length === 0 ? (
+            <div className="p-6 rounded-2xl bg-dark-950 border border-white/10 text-center text-xs text-slate-400">
+              Nenhum outro jogador vinculado a esta partida para avaliar individualmente. Você pode enviar sua avaliação da estrutura da Arena abaixo!
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              {playerEvaluations.map((player) => {
               const isMvp = mvpPlayerId === player.id;
               return (
                 <div
@@ -369,19 +402,37 @@ export default function MatchEvaluationPage({ myMatches = [], onEvaluationComple
                 >
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-3">
-                      <img
-                        src={player.avatar}
-                        alt={player.name}
-                        className={`w-12 h-12 rounded-full object-cover border-2 ${
-                          isMvp ? 'border-amber-400' : 'border-neon'
-                        }`}
-                      />
+                      {player.avatar ? (
+                        <img
+                          src={player.avatar}
+                          alt={player.name}
+                          className={`w-12 h-12 rounded-full object-cover border-2 ${
+                            isMvp ? 'border-amber-400' : 'border-neon'
+                          }`}
+                        />
+                      ) : (
+                        <div
+                          className={`w-12 h-12 rounded-full bg-dark-900 flex items-center justify-center font-display font-black text-xs text-neon border-2 shrink-0 ${
+                            isMvp ? 'border-amber-400' : 'border-neon'
+                          }`}
+                        >
+                          {(player.name || 'AT')
+                            .split(' ')
+                            .slice(0, 2)
+                            .map((n) => n[0])
+                            .join('')
+                            .toUpperCase()}
+                        </div>
+                      )}
                       <div>
                         <p className="font-display font-bold text-base text-white">
                           {player.name}
                         </p>
                         <span className="text-[11px] text-slate-400">
-                          {player.sport} • OVR Atual: <strong className="text-neon">{player.ovr}</strong>
+                          {player.sport} • OVR Atual:{' '}
+                          <strong className="text-neon">
+                            {player.ovr > 0 ? player.ovr : '—'}
+                          </strong>
                         </span>
                       </div>
                     </div>
@@ -468,7 +519,8 @@ export default function MatchEvaluationPage({ myMatches = [], onEvaluationComple
                 </div>
               );
             })}
-          </div>
+            </div>
+          )}
         </div>
 
         {/* Submit */}

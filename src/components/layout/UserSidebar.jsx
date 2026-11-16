@@ -131,13 +131,28 @@ export default function UserSidebar({
             to="/app/perfil"
             className="flex items-center gap-2.5 overflow-hidden cursor-pointer"
           >
-            <img
-              src={user?.avatar}
-              alt={user?.name}
-              className={`w-10 h-10 rounded-full object-cover border shrink-0 ${
-                isPro ? 'border-amber-400' : 'border-neon'
-              }`}
-            />
+            {user?.avatar ? (
+              <img
+                src={user.avatar}
+                alt={user?.name}
+                className={`w-10 h-10 rounded-full object-cover border shrink-0 ${
+                  isPro ? 'border-amber-400' : 'border-neon'
+                }`}
+              />
+            ) : (
+              <div
+                className={`w-10 h-10 rounded-full bg-dark-900 flex items-center justify-center font-display font-black text-xs text-neon border shrink-0 ${
+                  isPro ? 'border-amber-400' : 'border-neon'
+                }`}
+              >
+                {(user?.name || 'AT')
+                  .split(' ')
+                  .slice(0, 2)
+                  .map((n) => n[0])
+                  .join('')
+                  .toUpperCase()}
+              </div>
+            )}
             <div className="overflow-hidden">
               <p className="text-xs font-bold text-white truncate flex items-center gap-1">
                 {user?.nickname ? `"${user.nickname}"` : user?.name}
@@ -148,7 +163,7 @@ export default function UserSidebar({
                 )}
               </p>
               <span className="text-[10px] font-semibold text-neon block truncate">
-                {user?.name} • OVR {user?.ovr || 91}
+                {user?.name} • {user?.ovr > 0 ? `OVR ${user.ovr}` : 'Sem OVR'}
               </span>
             </div>
           </NavLink>

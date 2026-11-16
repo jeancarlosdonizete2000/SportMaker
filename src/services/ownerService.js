@@ -110,5 +110,133 @@ export const ownerService = {
     }
     return data.booking;
   },
+
+  /**
+   * Busca a lista de amigos reais do atleta logado + sugestões de outros usuários do banco
+   */
+  async getFriendsData() {
+    const response = await fetch(`${MONGO_CONFIG.restApiUrl}/friends`, {
+      method: 'GET',
+      headers: getAuthHeaders(),
+    });
+    const data = await response.json().catch(() => ({ friends: [], suggestions: [] }));
+    if (!response.ok) return { friends: [], suggestions: [] };
+    return {
+      friends: data.friends || [],
+      suggestions: data.suggestions || [],
+    };
+  },
+
+  /**
+   * Pesquisa outros usuários cadastrados no MongoDB pelo nome, apelido ou email
+   */
+  async searchUsers(query) {
+    const q = String(query || '').trim();
+    if (!q) return [];
+    const response = await fetch(
+      `${MONGO_CONFIG.restApiUrl}/users/search?q=${encodeURIComponent(q)}`,
+      {
+        method: 'GET',
+        headers: getAuthHeaders(),
+      }
+    );
+    const data = await response.json().catch(() => ({ users: [] }));
+    if (!response.ok) return [];
+    return data.users || [];
+  },
+
+  /**
+   * Adiciona um usuário real como amigo no MongoDB
+   */
+  async addFriend(targetUserId) {
+    const response = await fetch(`${MONGO_CONFIG.restApiUrl}/friends/${targetUserId}`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data.message || 'Erro ao adicionar amigo.');
+    }
+    return data.friend;
+  },
+
+  /**
+   * Remove um usuário da lista de amigos no MongoDB
+   */
+  async removeFriend(targetUserId) {
+    const response = await fetch(`${MONGO_CONFIG.restApiUrl}/friends/${targetUserId}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+    });
+    return response.ok;
+  },
+
+  /**
+   * Lista lobbies públicos reais do MongoDB
+   */
+  async getPublicLobbies() {
+    const response = await fetch(`${MONGO_CONFIG.restApiUrl}/lobbies`, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const data = await response.json().catch(() => ({ lobbies: [] }));
+    if (!response.ok) return [];
+    return data.lobbies || [];
+  },
+
+  /**
+   * Lista as partidas/reservas do atleta autenticado no MongoDB
+   */
+  async getMyMatches() {
+    const response = await fetch(`${MONGO_CONFIG.restApiUrl}/matches/my`, {
+      method: 'GET',
+      headers: getAuthHeaders(),
+    });
+    const data = await response.json().catch(() => ({ matches: [] }));
+    if (!response.ok) return [];
+    return data.matches || [];
+  },
+
+  /**
+   * Cria uma nova partida ou reserva para o atleta no MongoDB
+   */
+  async createMatch(matchPayload) {
+    const response = await fetch(`${MONGO_CONFIG.restApiUrl}/matches`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(matchPayload),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data.message || 'Erro ao criar partida no MongoDB.');
+    }
+    return data.match;
+  },
+
+  /**
+   * Entra ou sai de um lobby público no MongoDB
+   */
+  async toggleJoinLobby(matchId) {
+    const response = await fetch(`${MONGO_CONFIG.restApiUrl}/matches/${matchId}/join`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data.message || 'Erro ao atualizar participação no lobby.');
+    }
+    return data;
+  },
+
+  /**
+   * Cancela ou sai de uma partida no MongoDB
+   */
+  async cancelMatch(matchId) {
+    const response = await fetch(`${MONGO_CONFIG.restApiUrl}/matches/${matchId}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+    });
+    return response.ok;
+  },
 };
 

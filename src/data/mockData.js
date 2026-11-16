@@ -1,9 +1,9 @@
 export const SPORTS_CATEGORIES = [
-  { id: 'all', name: 'Todos', count: 142 },
-  { id: 'society', name: 'Futebol Society', count: 58 },
-  { id: 'beachtennis', name: 'Beach Tennis', count: 44 },
-  { id: 'padel', name: 'Padel & Tênis', count: 21 },
-  { id: 'futevolei', name: 'Futevôlei', count: 19 },
+  { id: 'all', name: 'Todos', count: 0 },
+  { id: 'society', name: 'Futebol Society', count: 0 },
+  { id: 'beachtennis', name: 'Beach Tennis', count: 0 },
+  { id: 'padel', name: 'Padel & Tênis', count: 0 },
+  { id: 'futevolei', name: 'Futevôlei', count: 0 },
 ];
 
 export const ARENAS_DATA = [

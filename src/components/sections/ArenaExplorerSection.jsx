@@ -5,6 +5,7 @@ import ArenaCard from '../cards/ArenaCard';
 
 export default function ArenaExplorerSection({
   arenas,
+  allArenas = arenas,
   selectedCategory,
   onCategoryChange,
   selectedSlots,
@@ -34,6 +35,10 @@ export default function ArenaExplorerSection({
         <div className="flex items-center gap-2.5 overflow-x-auto no-scrollbar pb-4 mb-8">
           {SPORTS_CATEGORIES.map((category) => {
             const isSelected = selectedCategory === category.id;
+            const dbCount =
+              category.id === 'all'
+                ? allArenas.length
+                : allArenas.filter((a) => a.sport === category.id).length;
             return (
               <button
                 key={category.id}
@@ -50,7 +55,7 @@ export default function ArenaExplorerSection({
                     isSelected ? 'bg-dark-950/20 text-dark-950' : 'bg-white/5 text-slate-400'
                   }`}
                 >
-                  {category.count}
+                  {dbCount}
                 </span>
               </button>
             );
@@ -58,23 +63,34 @@ export default function ArenaExplorerSection({
         </div>
 
         {/* Arena Cards Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 sm:gap-8">
-          {arenas.map((arena) => {
-            const chosenSlot =
-              selectedSlots[arena.id] ||
-              arena.slots.find((s) => s.status === 'available')?.time;
-            return (
-              <ArenaCard
-                key={arena.id}
-                arena={arena}
-                chosenSlot={chosenSlot}
-                onSelectSlot={onSelectSlot}
-                onBook={onOpenBooking}
-                onViewDetails={onViewArenaDetails}
-              />
-            );
-          })}
-        </div>
+        {arenas.length === 0 ? (
+          <div className="glass-card rounded-3xl p-10 border border-white/10 text-center space-y-2">
+            <p className="font-display font-bold text-lg text-white">
+              Nenhuma arena encontrada no banco de dados para este filtro.
+            </p>
+            <p className="text-xs text-slate-400">
+              Cadastre novas arenas pelo Portal do Proprietário ou altere a modalidade selecionada.
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 sm:gap-8">
+            {arenas.map((arena) => {
+              const chosenSlot =
+                selectedSlots[arena.id] ||
+                arena.slots.find((s) => s.status === 'available')?.time;
+              return (
+                <ArenaCard
+                  key={arena.id}
+                  arena={arena}
+                  chosenSlot={chosenSlot}
+                  onSelectSlot={onSelectSlot}
+                  onBook={onOpenBooking}
+                  onViewDetails={onViewArenaDetails}
+                />
+              );
+            })}
+          </div>
+        )}
       </div>
     </section>
   );

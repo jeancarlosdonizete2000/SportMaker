@@ -139,14 +139,22 @@ export default function OwnerSidebar({
             to="/proprietario/configuracoes"
             className="flex items-center gap-2.5 overflow-hidden cursor-pointer"
           >
-            <img
-              src={
-                user?.avatar ||
-                'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=200&q=80'
-              }
-              alt={user?.name}
-              className="w-10 h-10 rounded-full object-cover border border-emerald-400 shrink-0"
-            />
+            {user?.avatar ? (
+              <img
+                src={user.avatar}
+                alt={user?.name}
+                className="w-10 h-10 rounded-full object-cover border border-emerald-400 shrink-0"
+              />
+            ) : (
+              <div className="w-10 h-10 rounded-full bg-dark-900 border border-emerald-400 flex items-center justify-center font-display font-black text-xs text-emerald-400 shrink-0">
+                {(user?.name || 'AR')
+                  .split(' ')
+                  .slice(0, 2)
+                  .map((n) => n[0])
+                  .join('')
+                  .toUpperCase()}
+              </div>
+            )}
             <div className="overflow-hidden">
               <p className="text-xs font-bold text-white truncate flex items-center gap-1">
                 {user?.name || 'Gestor da Arena'}

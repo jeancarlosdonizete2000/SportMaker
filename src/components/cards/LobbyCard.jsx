@@ -29,18 +29,29 @@ export default function LobbyCard({ lobby, hasJoined, isFriend, onToggleFriend, 
       <div className="pt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         {/* Host Info + Add Friend Button */}
         <div className="flex items-center gap-3">
-          <img
-            src={lobby.host.avatar}
-            alt={lobby.host.name}
-            className="w-10 h-10 rounded-full object-cover border border-neon"
-          />
+          {lobby.host.avatar ? (
+            <img
+              src={lobby.host.avatar}
+              alt={lobby.host.name}
+              className="w-10 h-10 rounded-full object-cover border border-neon"
+            />
+          ) : (
+            <div className="w-10 h-10 rounded-full bg-dark-950 border border-neon flex items-center justify-center font-display font-black text-xs text-neon shrink-0">
+              {(lobby.host.name || 'AT')
+                .split(' ')
+                .slice(0, 2)
+                .map((n) => n[0])
+                .join('')
+                .toUpperCase()}
+            </div>
+          )}
           <div>
             <div className="flex items-center gap-2">
               <span className="text-xs font-bold text-white">
                 Org: {lobby.host.name}
               </span>
               <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-white/10 text-neon">
-                OVR {lobby.host.rating}
+                {lobby.host.rating > 0 ? `OVR ${lobby.host.rating}` : 'Sem OVR'}
               </span>
             </div>
             <div className="flex flex-wrap gap-1 mt-1">

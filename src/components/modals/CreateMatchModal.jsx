@@ -2,10 +2,17 @@ import React, { useState } from 'react';
 import { X, Plus, Calendar, Clock, Users, DollarSign, ShieldCheck, Crown } from 'lucide-react';
 import { ARENAS_DATA } from '../../data/mockData';
 
-export default function CreateMatchModal({ isOpen, onClose, onCreateMatch, currentUser }) {
+export default function CreateMatchModal({
+  isOpen,
+  onClose,
+  onCreateMatch,
+  currentUser,
+  arenas = [],
+}) {
   const isPro = !!currentUser?.isPro && currentUser?.proStatus === 'active';
+  const availableArenas = arenas.length > 0 ? arenas : ARENAS_DATA;
   const [title, setTitle] = useState('');
-  const [arenaId, setArenaId] = useState(ARENAS_DATA[0].id);
+  const [arenaId, setArenaId] = useState(availableArenas[0]?.id || ARENAS_DATA[0].id);
   const [time, setTime] = useState('Hoje, 20:30');
   const [totalSlots, setTotalSlots] = useState(14);
   const [pricePerPlayer, setPricePerPlayer] = useState(isPro ? 17 : 20);
@@ -13,7 +20,8 @@ export default function CreateMatchModal({ isOpen, onClose, onCreateMatch, curre
 
   if (!isOpen) return null;
 
-  const selectedArena = ARENAS_DATA.find((a) => a.id === Number(arenaId)) || ARENAS_DATA[0];
+  const selectedArena =
+    availableArenas.find((a) => String(a.id) === String(arenaId)) || availableArenas[0] || ARENAS_DATA[0];
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -34,11 +42,9 @@ export default function CreateMatchModal({ isOpen, onClose, onCreateMatch, curre
         name: currentUser?.nickname
           ? `${currentUser.name} "${currentUser.nickname}"`
           : currentUser?.name || 'Atleta Verificado',
-        rating: currentUser?.ovr || 88,
+        rating: currentUser?.ovr ?? 0,
         isPro,
-        avatar:
-          currentUser?.avatar ||
-          'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=200&q=80',
+        avatar: currentUser?.avatar || '',
       },
       neededPositions: positionsInput
         .split(',')
@@ -114,7 +120,7 @@ export default function CreateMatchModal({ isOpen, onClose, onCreateMatch, curre
                 onChange={(e) => setArenaId(e.target.value)}
                 className="w-full bg-dark-950 border border-white/10 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-neon"
               >
-                {ARENAS_DATA.map((arena) => (
+                {availableArenas.map((arena) => (
                   <option key={arena.id} value={arena.id} className="bg-dark-900 text-white">
                     {arena.name}
                   </option>

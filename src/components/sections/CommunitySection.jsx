@@ -88,16 +88,27 @@ export default function CommunitySection({ lobbies, onCreateMatchClick }) {
               </button>
             </div>
 
-            {lobbies.map((lobby) => (
-              <LobbyCard
-                key={lobby.id}
-                lobby={lobby}
-                hasJoined={!!joinedLobbies[lobby.id]}
-                isFriend={!!friendRequestsSent[lobby.id]}
-                onToggleFriend={handleToggleFriend}
-                onToggleJoin={handleToggleJoin}
-              />
-            ))}
+            {lobbies.length === 0 ? (
+              <div className="glass-card rounded-2xl p-8 border border-white/10 text-center space-y-2">
+                <p className="font-display font-bold text-base text-white">
+                  Nenhuma partida pública aberta no momento.
+                </p>
+                <p className="text-xs text-slate-400">
+                  Seja o primeiro a criar uma partida aberta na sua região clicando no botão acima!
+                </p>
+              </div>
+            ) : (
+              lobbies.map((lobby) => (
+                <LobbyCard
+                  key={lobby.id}
+                  lobby={lobby}
+                  hasJoined={!!joinedLobbies[lobby.id]}
+                  isFriend={!!friendRequestsSent[lobby.id]}
+                  onToggleFriend={handleToggleFriend}
+                  onToggleJoin={handleToggleJoin}
+                />
+              ))
+            )}
           </div>
 
           {/* Interactive Post-Match Evaluation Widget */}

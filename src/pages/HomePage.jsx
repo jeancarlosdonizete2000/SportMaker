@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, lazy, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ARENAS_DATA, OPEN_LOBBIES } from '../data/mockData';
+import { ARENAS_DATA } from '../data/mockData';
 import { useBooking } from '../hooks/useBooking';
 import { useAuth } from '../context/AuthContext';
 import MainLayout from '../components/layout/MainLayout';
@@ -72,6 +72,15 @@ export default function HomePage({
         }
       })
       .catch(() => {});
+
+    ownerService
+      .getPublicLobbies()
+      .then((list) => {
+        if (Array.isArray(list)) {
+          setLobbies(list);
+        }
+      })
+      .catch(() => {});
   }, []);
   const [userLocation, setUserLocation] = useState(() =>
     locationService.getStoredLocation()
@@ -87,7 +96,7 @@ export default function HomePage({
   });
 
   // Lobbies & Create Match Modal State
-  const [lobbies, setLobbies] = useState(OPEN_LOBBIES);
+  const [lobbies, setLobbies] = useState([]);
   const [createMatchModalOpen, setCreateMatchModalOpen] = useState(false);
 
   // Booking Flow Custom Hook
@@ -142,8 +151,13 @@ export default function HomePage({
     handleOpenBooking(arena);
   };
 
-  const handleAddCreatedMatch = (newLobby) => {
-    setLobbies((prev) => [newLobby, ...prev]);
+  const handleAddCreatedMatch = async (newLobby) => {
+    try {
+      const saved = await ownerService.createMatch(newLobby);
+      setLobbies((prev) => [saved, ...prev]);
+    } catch {
+      setLobbies((prev) => [newLobby, ...prev]);
+    }
     const communityEl = document.getElementById('comunidade');
     if (communityEl) {
       communityEl.scrollIntoView({ behavior: 'smooth' });
@@ -214,6 +228,7 @@ export default function HomePage({
 
       <ArenaExplorerSection
         arenas={filteredArenas}
+        allArenas={dbArenas}
         selectedCategory={selectedCategory}
         onCategoryChange={setSelectedCategory}
         selectedSlots={selectedSlots}
@@ -260,6 +275,7 @@ export default function HomePage({
             onClose={() => setCreateMatchModalOpen(false)}
             onCreateMatch={handleAddCreatedMatch}
             currentUser={user}
+            arenas={dbArenas}
           />
         )}
 

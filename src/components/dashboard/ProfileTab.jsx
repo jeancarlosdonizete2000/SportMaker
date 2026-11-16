@@ -2,29 +2,22 @@ import React, { useState, useRef } from 'react';
 import {
   Trophy,
   SlidersHorizontal,
-  Award,
   Camera,
   Upload,
   Sparkles,
   CheckCircle2,
   Crown,
   Lock,
+  User,
+  Trash2,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { PLAYER_ARCHETYPES, CARD_THEMES } from '../../data/mockData';
+import { CARD_THEMES } from '../../data/mockData';
 import PlayerCard from '../cards/PlayerCard';
 import { useAuth } from '../../context/AuthContext';
 
-const AVATAR_PRESETS = [
-  'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=400&q=80',
-  'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80',
-  'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=400&q=80',
-  'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=400&q=80',
-  'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=400&q=80',
-  'https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?auto=format&fit=crop&w=400&q=80',
-];
-
 const STANDARD_TAGS = [
+  'Atleta Iniciante',
   'Capitão & Artilheiro',
   'Rei do 3º Tempo 🍻',
   'Paredão Invicto 🛡️',
@@ -42,14 +35,12 @@ export default function ProfileTab() {
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
 
-  const [nickname, setNickname] = useState(user?.nickname || 'Flash');
-  const [selectedAvatar, setSelectedAvatar] = useState(
-    user?.avatar || PLAYER_ARCHETYPES[0].avatar
-  );
+  const [nickname, setNickname] = useState(user?.nickname || '');
+  const [selectedAvatar, setSelectedAvatar] = useState(user?.avatar || '');
   const [activeThemeIndex, setActiveThemeIndex] = useState(isPro ? 2 : 0);
   const [customTag, setCustomTag] = useState(user?.customTag || STANDARD_TAGS[0]);
   const [positionRole, setPositionRole] = useState(
-    user?.positionRole || 'Atacante / Ala • Futebol Society'
+    user?.positionRole || 'Atleta Sport Maker'
   );
   const [saving, setSaving] = useState(false);
   const [savedBanner, setSavedBanner] = useState(false);
@@ -84,12 +75,25 @@ export default function ProfileTab() {
     }
   };
 
+  const userStats = user?.stats || {
+    ritmo: 0,
+    finalizacao: 0,
+    passe: 0,
+    defesa: 0,
+    fisico: 0,
+    fairPlay: 0,
+  };
+
   const basePlayer = {
-    ...PLAYER_ARCHETYPES[0],
-    name: user?.name || PLAYER_ARCHETYPES[0].name,
+    name: user?.name || 'Atleta Sport Maker',
     nickname: nickname.trim(),
     avatar: selectedAvatar,
-    ovr: isPro ? 95 : user?.ovr || 91,
+    ovr: user?.ovr ?? 0,
+    matches: user?.matchesCount ?? 0,
+    mvpCount: user?.mvpCount ?? 0,
+    friendsCount: Array.isArray(user?.friends) ? user.friends.length : 0,
+    fairPlay: user?.fairPlay ?? 0,
+    stats: userStats,
     role: positionRole,
     isPro,
     badgesList: isPro
@@ -97,9 +101,8 @@ export default function ProfileTab() {
           '👑 Assinante PRO VIP',
           '⚡ Prioridade na Fila',
           '⚽ Bola Oficial Grátis',
-          ...PLAYER_ARCHETYPES[0].badgesList.slice(0, 2),
         ]
-      : PLAYER_ARCHETYPES[0].badgesList,
+      : [],
   };
 
   const currentTheme = CARD_THEMES[activeThemeIndex];
@@ -163,18 +166,33 @@ export default function ProfileTab() {
             </div>
           )}
 
-          {/* 1. Photo Customization (Upload from Device or Choose Avatar Preset) */}
+          {/* 1. Photo Customization (Upload from Device only, no fictitious images) */}
           <div className="space-y-3">
             <label className="block text-xs font-bold text-slate-200 flex items-center gap-1.5">
               <Camera className="w-4 h-4 text-neon" /> 1. Foto de Perfil do Atleta:
             </label>
 
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 p-4 rounded-2xl bg-dark-950/90 border border-white/10">
-              <img
-                src={selectedAvatar}
-                alt="Preview"
-                className="w-16 h-16 rounded-2xl object-cover border-2 border-neon shrink-0"
-              />
+              {selectedAvatar ? (
+                <img
+                  src={selectedAvatar}
+                  alt="Preview"
+                  className="w-16 h-16 rounded-2xl object-cover border-2 border-neon shrink-0"
+                />
+              ) : (
+                <div className="w-16 h-16 rounded-2xl bg-dark-900 border-2 border-white/15 flex items-center justify-center text-neon font-display font-black text-xl shrink-0">
+                  {user?.name ? (
+                    user.name
+                      .split(' ')
+                      .slice(0, 2)
+                      .map((n) => n[0])
+                      .join('')
+                      .toUpperCase()
+                  ) : (
+                    <User className="w-7 h-7 text-slate-400" />
+                  )}
+                </div>
+              )}
               <div className="space-y-2 flex-1">
                 <div className="flex flex-wrap gap-2">
                   <input
@@ -190,30 +208,23 @@ export default function ProfileTab() {
                     className="px-3.5 py-2 rounded-xl bg-neon hover:bg-neon-400 text-dark-950 font-display font-extrabold text-xs flex items-center gap-1.5"
                   >
                     <Upload className="w-3.5 h-3.5" />
-                    Enviar Foto do Dispositivo
+                    Enviar Minha Foto do Dispositivo
                   </button>
+                  {selectedAvatar && (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedAvatar('')}
+                      className="px-3 py-2 rounded-xl bg-white/5 hover:bg-red-500/20 text-slate-300 hover:text-red-300 border border-white/10 text-xs font-bold flex items-center gap-1.5 transition-all"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      Remover Foto
+                    </button>
+                  )}
                 </div>
                 <p className="text-[11px] text-slate-400">
-                  Ou selecione um dos avatares esportivos rápidos abaixo:
+                  Envie uma foto real do seu dispositivo. Caso não envie, suas iniciais serão exibidas no card.
                 </p>
               </div>
-            </div>
-
-            <div className="flex items-center gap-2.5 overflow-x-auto no-scrollbar py-1">
-              {AVATAR_PRESETS.map((url, idx) => (
-                <button
-                  key={idx}
-                  type="button"
-                  onClick={() => setSelectedAvatar(url)}
-                  className={`relative w-12 h-12 rounded-xl overflow-hidden border-2 shrink-0 transition-all ${
-                    selectedAvatar === url
-                      ? 'border-neon scale-105 shadow-neon'
-                      : 'border-white/15 opacity-70 hover:opacity-100'
-                  }`}
-                >
-                  <img src={url} alt={`Avatar ${idx + 1}`} className="w-full h-full object-cover" />
-                </button>
-              ))}
             </div>
           </div>
 

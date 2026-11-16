@@ -44,6 +44,23 @@ export default function MyMatchesTab({
       </div>
 
       {/* Matches List */}
+      {myMatches.length === 0 ? (
+        <div className="glass-card rounded-3xl p-10 border border-white/10 text-center space-y-3">
+          <p className="font-display font-bold text-lg text-white">
+            Você ainda não possui partidas agendadas ou criadas.
+          </p>
+          <p className="text-xs sm:text-sm text-slate-400 max-w-md mx-auto">
+            Reserve um horário nas Arenas ou solicite entrada em um Lobby Público para começar a jogar!
+          </p>
+          <button
+            onClick={() => navigate('/app/arenas')}
+            className="mt-2 inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-neon hover:bg-neon-400 text-dark-950 font-display font-extrabold text-xs shadow-neon transition-all"
+          >
+            <Plus className="w-4 h-4" />
+            Explorar Arenas Disponíveis
+          </button>
+        </div>
+      ) : (
       <div className="space-y-4">
         {myMatches.map((match) => {
           const isPending = match.status.toLowerCase().includes('solicita');
@@ -146,6 +163,7 @@ export default function MyMatchesTab({
           );
         })}
       </div>
+      )}
     </div>
   );
 }

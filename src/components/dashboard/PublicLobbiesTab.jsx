@@ -72,6 +72,16 @@ export default function PublicLobbiesTab({
       </div>
 
       {/* Public Lobbies Grid */}
+      {filteredLobbies.length === 0 ? (
+        <div className="glass-card rounded-3xl p-10 border border-white/10 text-center space-y-3">
+          <p className="font-display font-bold text-lg text-white">
+            Nenhuma partida pública aberta encontrada no momento.
+          </p>
+          <p className="text-xs sm:text-sm text-slate-400 max-w-md mx-auto">
+            Clique em "Criar Minha Partida Pública" acima para inaugurar um lobby e convocar atletas da sua região!
+          </p>
+        </div>
+      ) : (
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
         {filteredLobbies.map((lobby) => {
           const isRequested = requestedLobbyIds.includes(lobby.id);
@@ -109,18 +119,29 @@ export default function PublicLobbiesTab({
                 {/* Host Player Info */}
                 <div className="p-3.5 rounded-2xl bg-dark-950/80 border border-white/10 flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <img
-                      src={lobby.host.avatar}
-                      alt={lobby.host.name}
-                      className="w-10 h-10 rounded-full object-cover border border-neon"
-                    />
+                    {lobby.host.avatar ? (
+                      <img
+                        src={lobby.host.avatar}
+                        alt={lobby.host.name}
+                        className="w-10 h-10 rounded-full object-cover border border-neon"
+                      />
+                    ) : (
+                      <div className="w-10 h-10 rounded-full bg-dark-900 border border-neon flex items-center justify-center font-display font-black text-xs text-neon shrink-0">
+                        {(lobby.host.name || 'AT')
+                          .split(' ')
+                          .slice(0, 2)
+                          .map((n) => n[0])
+                          .join('')
+                          .toUpperCase()}
+                      </div>
+                    )}
                     <div>
                       <p className="text-xs font-bold text-white flex items-center gap-1.5">
                         Organizador: {lobby.host.name}
                         <ShieldCheck className="w-3.5 h-3.5 text-neon" />
                       </p>
                       <span className="text-[11px] text-neon font-semibold">
-                        OVR {lobby.host.rating} • Fair Play Verificado
+                        {lobby.host.rating > 0 ? `OVR ${lobby.host.rating}` : 'Sem OVR'} • Fair Play Verificado
                       </span>
                     </div>
                   </div>
@@ -184,6 +205,7 @@ export default function PublicLobbiesTab({
           );
         })}
       </div>
+      )}
     </div>
   );
 }

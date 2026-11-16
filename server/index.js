@@ -52,15 +52,11 @@ const UserSchema = new mongoose.Schema(
     arenaName: { type: String, default: null },
     cnpj: { type: String, default: null },
     favoriteSport: { type: String, default: 'society' },
-    positionRole: { type: String, default: 'Atacante / Ala • Futebol Society' },
-    customTag: { type: String, default: 'Capitão & Artilheiro' },
-    ovr: { type: Number, default: 88 },
+    positionRole: { type: String, default: 'Atleta Sport Maker' },
+    customTag: { type: String, default: 'Atleta Iniciante' },
+    ovr: { type: Number, default: 0 },
     pixKey: { type: String, default: '' },
-    avatar: {
-      type: String,
-      default:
-        'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=200&q=80',
-    },
+    avatar: { type: String, default: '' },
     // Controle de Assinatura PRO (Liberado apenas após confirmação de pagamento)
     isPro: { type: Boolean, default: false },
     proPlan: { type: String, enum: [null, 'monthly', 'annual'], default: null },
@@ -84,11 +80,68 @@ const UserSchema = new mongoose.Schema(
       city: { type: String, default: '' },
       updatedAt: { type: Date, default: null },
     },
+
+    // Estatísticas reais e Rede de Amigos do Atleta (iniciam zeradas em novas contas)
+    matchesCount: { type: Number, default: 0 },
+    mvpCount: { type: Number, default: 0 },
+    fairPlay: { type: Number, default: 0 },
+    stats: {
+      ritmo: { type: Number, default: 0 },
+      finalizacao: { type: Number, default: 0 },
+      passe: { type: Number, default: 0 },
+      defesa: { type: Number, default: 0 },
+      fisico: { type: Number, default: 0 },
+      fairPlay: { type: Number, default: 0 },
+    },
+    friends: { type: [String], default: [] },
   },
   { timestamps: true }
 );
 
 const User = mongoose.models.User || mongoose.model('User', UserSchema);
+
+// Schema Mongoose para Partidas / Lobbies dos Atletas
+const MatchSchema = new mongoose.Schema(
+  {
+    hostId: { type: String, required: true, index: true },
+    hostName: { type: String, required: true },
+    hostAvatar: { type: String, default: '' },
+    hostRating: { type: Number, default: 88 },
+    isProHost: { type: Boolean, default: false },
+    freeBallIncluded: { type: Boolean, default: false },
+    title: { type: String, required: true, trim: true },
+    arenaId: { type: String, default: '' },
+    arena: { type: String, required: true },
+    neighborhood: { type: String, default: '' },
+    distance: { type: String, default: '1.5 km' },
+    time: { type: String, required: true },
+    totalSlots: { type: Number, default: 14 },
+    filledSlots: { type: Number, default: 1 },
+    pricePerPlayer: { type: Number, default: 20 },
+    neededPositions: { type: [String], default: [] },
+    extras: { type: [String], default: [] },
+    isPublicLobby: { type: Boolean, default: true },
+    status: { type: String, default: 'Confirmada' },
+    participants: {
+      type: [
+        {
+          userId: { type: String },
+          name: { type: String },
+          avatar: { type: String },
+          ovr: { type: Number, default: 88 },
+          role: { type: String, default: 'Solicitante' },
+          status: { type: String, default: 'Confirmada' },
+          evaluated: { type: Boolean, default: false },
+          evaluationStars: { type: Number, default: null },
+        },
+      ],
+      default: [],
+    },
+  },
+  { timestamps: true }
+);
+
+const Match = mongoose.models.Match || mongoose.model('Match', MatchSchema);
 
 // Schema Mongoose para Arenas dos Proprietários (Integrado ao MongoDB Atlas)
 const ArenaSchema = new mongoose.Schema(
@@ -309,12 +362,8 @@ app.post('/api/auth/register', async (req, res) => {
       arenaName: role === 'owner' ? arenaName : null,
       cnpj: role === 'owner' ? cnpj : null,
       favoriteSport: role === 'player' ? favoriteSport || 'society' : null,
-      ovr: role === 'player' ? 88 : null,
-      avatar:
-        avatar ||
-        (role === 'owner'
-          ? 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=200&q=80'
-          : 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=200&q=80'),
+      ovr: 0,
+      avatar: avatar || '',
     });
 
     const token = signJwtToken({
@@ -426,7 +475,7 @@ app.put('/api/auth/profile', async (req, res) => {
     const updates = {};
     if (typeof name === 'string' && name.trim()) updates.name = name.trim();
     if (typeof nickname === 'string') updates.nickname = nickname.trim();
-    if (typeof avatar === 'string' && avatar.trim()) updates.avatar = avatar.trim();
+    if (typeof avatar === 'string') updates.avatar = avatar.trim();
     if (typeof positionRole === 'string') updates.positionRole = positionRole;
     if (typeof customTag === 'string') updates.customTag = customTag;
     if (typeof pixKey === 'string') updates.pixKey = pixKey;
@@ -507,7 +556,7 @@ app.post('/api/subscription/confirm-payment', async (req, res) => {
   }
 });
 
-// Helper: Inicializa Arena padrão e Agendamentos iniciais no MongoDB caso o proprietário ainda não tenha nenhum
+// Helper: Inicializa Arena padrão no MongoDB caso o proprietário ainda não tenha nenhuma (sem reservas fictícias)
 async function ensureOwnerDefaultArenaAndBookings(ownerUser) {
   const ownerId = String(ownerUser._id);
   let arenas = await Arena.find({ ownerId }).sort({ createdAt: -1 });
@@ -516,188 +565,64 @@ async function ensureOwnerDefaultArenaAndBookings(ownerUser) {
     const defaultArena = await Arena.create({
       ownerId,
       ownerEmail: ownerUser.email,
-      name: ownerUser.arenaName || 'Arena Prime Sports & Lounge',
-      cnpj: ownerUser.cnpj || '41.892.310/0001-19',
+      name: ownerUser.arenaName || 'Nova Arena Esportiva',
+      cnpj: ownerUser.cnpj || '',
       sport: 'society',
       sportLabel: 'Futebol Society • Grama FIFA Pro',
       distance: '1.2 km',
-      neighborhood: 'Vila Olímpia, SP',
-      address: 'Av. Dr. Cardoso de Melo, 1450 - Vila Olímpia, São Paulo - SP',
+      neighborhood: 'São Paulo, SP',
+      address: '',
       openingHours: 'Seg a Dom • 07:00 às 00:00',
       description:
-        'Complexo esportivo premium com quadras de grama sintética padrão FIFA Quality Pro, amortecimento de impacto, vestiários climatizados e gastrobar completo com vista panorâmica para os jogos.',
-      rating: 4.9,
-      reviewsCount: 328,
-      pricePerHour: 220,
-      pricePerPlayer: 18,
+        'Complexo esportivo com quadras iluminadas, vestiários e área de convivência pós-jogo.',
+      rating: 5.0,
+      reviewsCount: 0,
+      pricePerHour: 200,
+      pricePerPlayer: 20,
       image:
         'https://images.unsplash.com/photo-1574629810360-7efbbe195018?auto=format&fit=crop&w=1000&q=80',
       gallery: [
         'https://images.unsplash.com/photo-1574629810360-7efbbe195018?auto=format&fit=crop&w=1000&q=80',
-        'https://images.unsplash.com/photo-1529900748604-07564a03e7a6?auto=format&fit=crop&w=800&q=80',
-        'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=800&q=80',
       ],
       amenities: [
-        'Estacionamento c/ Manobrista',
-        'Churrasqueira Gourmet',
+        'Estacionamento',
+        'Churrasqueira',
         'Bar & Restaurante',
-        'Vestiário VIP',
-        'Wi-Fi 6',
+        'Vestiário',
+        'Wi-Fi',
       ],
       onSiteServices: [
         {
           title: 'Restaurante & Sports Bar no Local',
           description:
-            'Porções, hambúrgueres artesanais, espetinhos, chopp trincando, isotônicos e energéticos.',
+            'Porções, bebidas geladas, isotônicos e área de convivência.',
           badge: 'Gastronomia & Bebidas',
-        },
-        {
-          title: 'Quiosques de Churrasco Pós-Jogo',
-          description:
-            '4 churrasqueiras privativas equipadas com cervejeira, som Bluetooth e TV 65".',
-          badge: '3º Tempo',
         },
       ],
       courts: [
         {
           id: 'c1',
-          name: 'Quadra 1 • Stadium FIFA Pro',
+          name: 'Quadra 1 • Principal',
           sport: 'Futebol Society (7x7)',
-          surface: 'Grama Sintética 60mm c/ Shockpad',
-          covered: true,
-          pricePerHour: 220,
-        },
-        {
-          id: 'c2',
-          name: 'Quadra 2 • Arena Speed',
-          sport: 'Futebol Society (6x6)',
-          surface: 'Grama Sintética Monofilamento',
+          surface: 'Grama Sintética 60mm',
           covered: true,
           pricePerHour: 200,
         },
-        {
-          id: 'c3',
-          name: 'Quadra 3 • Areia Lounge',
-          sport: 'Futevôlei & Beach Tennis',
-          surface: 'Areia Branca Quartzo Fina',
-          covered: false,
-          pricePerHour: 150,
-        },
       ],
       products: [
-        { id: 'p1', name: 'Kit Churrasco Pós-Jogo (Carvão + Gelo)', price: 65, tag: 'Mais pedido' },
+        { id: 'p1', name: 'Kit Churrasco Pós-Jogo (Carvão + Gelo)', price: 65, tag: '3º Tempo' },
         { id: 'p2', name: 'Locação Bola Oficial Penalty S11', price: 15, tag: 'Equipamento' },
-        { id: 'p3', name: 'Combo 6x Isotônicos Gelados', price: 48, tag: 'Bebidas' },
       ],
       slots: [
-        { time: '17:00', status: 'available', highlight: '', discount: '' },
-        { time: '18:00', status: 'booked', highlight: '', discount: '' },
-        { time: '19:00', status: 'booked', highlight: 'Horário Nobre', discount: '' },
+        { time: '18:00', status: 'available', highlight: '', discount: '' },
+        { time: '19:00', status: 'available', highlight: 'Horário Nobre', discount: '' },
         { time: '20:00', status: 'available', highlight: 'Horário Nobre', discount: '' },
-        { time: '21:00', status: 'booked', highlight: '', discount: '' },
-        { time: '22:00', status: 'available', highlight: '', discount: '-15%' },
-        { time: '23:00', status: 'available', highlight: '', discount: '' },
+        { time: '21:00', status: 'available', highlight: '', discount: '' },
+        { time: '22:00', status: 'available', highlight: '', discount: '' },
       ],
     });
 
     arenas = [defaultArena];
-
-    // Popula reservas iniciais reais no MongoDB para alimentar o Painel de Ganhos e Quadro de Horários
-    const arenaIdStr = String(defaultArena._id);
-    await Booking.insertMany([
-      {
-        arenaId: arenaIdStr,
-        ownerId,
-        arenaName: defaultArena.name,
-        courtId: 'c1',
-        courtName: 'Quadra 1 • Stadium FIFA Pro',
-        surface: 'Grama Sintética 60mm c/ Shockpad',
-        sport: 'Futebol Society (7x7)',
-        dateLabel: 'Hoje',
-        slotTime: '18:00',
-        customerName: 'Gabriel "Flash" Silva',
-        customerPhone: '(11) 99412-8831',
-        customerEmail: 'gabriel.flash@sportmaker.app',
-        isProCustomer: true,
-        courtAmount: 187,
-        productsAmount: 65,
-        totalAmount: 252,
-        productsList: ['Kit Churrasco Pós-Jogo (Carvão + Gelo)', 'Bola Oficial Grátis (PRO)'],
-        paymentMethod: 'Pix',
-        paymentStatus: 'paid',
-        bookingStatus: 'confirmed',
-        notes: 'Check-in automático PRO confirmado',
-      },
-      {
-        arenaId: arenaIdStr,
-        ownerId,
-        arenaName: defaultArena.name,
-        courtId: 'c1',
-        courtName: 'Quadra 1 • Stadium FIFA Pro',
-        surface: 'Grama Sintética 60mm c/ Shockpad',
-        sport: 'Futebol Society (7x7)',
-        dateLabel: 'Hoje',
-        slotTime: '19:00',
-        customerName: 'Lucas Mendes',
-        customerPhone: '(11) 98211-4090',
-        customerEmail: 'lucas@sportmaker.app',
-        isProCustomer: false,
-        courtAmount: 220,
-        productsAmount: 63,
-        totalAmount: 283,
-        productsList: ['Locação Bola Oficial Penalty S11', 'Combo 6x Isotônicos Gelados'],
-        paymentMethod: 'Pix',
-        paymentStatus: 'paid',
-        bookingStatus: 'confirmed',
-        notes: 'Dividido entre 14 atletas via Pix Split',
-      },
-      {
-        arenaId: arenaIdStr,
-        ownerId,
-        arenaName: defaultArena.name,
-        courtId: 'c2',
-        courtName: 'Quadra 2 • Arena Speed',
-        surface: 'Grama Sintética Monofilamento',
-        sport: 'Futebol Society (6x6)',
-        dateLabel: 'Hoje',
-        slotTime: '21:00',
-        customerName: 'Rodrigo Alencar',
-        customerPhone: '(11) 97102-3319',
-        customerEmail: 'rodrigo@empresa.com.br',
-        isProCustomer: false,
-        courtAmount: 200,
-        productsAmount: 65,
-        totalAmount: 265,
-        productsList: ['Kit Churrasco Pós-Jogo (Carvão + Gelo)'],
-        paymentMethod: 'Cartão',
-        paymentStatus: 'paid',
-        bookingStatus: 'confirmed',
-        notes: 'Reserva mensal corporativa',
-      },
-      {
-        arenaId: arenaIdStr,
-        ownerId,
-        arenaName: defaultArena.name,
-        courtId: 'c3',
-        courtName: 'Quadra 3 • Areia Lounge',
-        surface: 'Areia Branca Quartzo Fina',
-        sport: 'Futevôlei & Beach Tennis',
-        dateLabel: 'Amanhã',
-        slotTime: '19:00',
-        customerName: 'Camila Rocha',
-        customerPhone: '(11) 98872-1104',
-        customerEmail: 'camila.bt@sportmaker.app',
-        isProCustomer: true,
-        courtAmount: 150,
-        productsAmount: 48,
-        totalAmount: 198,
-        productsList: ['Combo 6x Isotônicos Gelados'],
-        paymentMethod: 'Pix',
-        paymentStatus: 'pending',
-        bookingStatus: 'confirmed',
-        notes: 'Torneio Rei da Quadra Beach Tennis',
-      },
-    ]);
   }
 
   return arenas;
@@ -1008,10 +933,383 @@ app.patch('/api/owner/bookings/:id', async (req, res) => {
   }
 });
 
+// ============================================================================
+// ENDPOINTS DE REDE DE AMIGOS & BUSCA DE USUÁRIOS REAIS NO MONGODB
+// ============================================================================
+
+function formatPublicPlayer(u) {
+  return {
+    id: String(u._id),
+    name: u.name,
+    nickname: u.nickname || '',
+    handle: `@${(u.nickname || u.name || 'atleta').toLowerCase().replace(/\s+/g, '')}`,
+    sport: u.positionRole || 'Atleta Sport Maker',
+    ovr: u.ovr ?? 0,
+    avatar: u.avatar || '',
+    isPro: Boolean(u.isPro && u.proStatus === 'active'),
+    matchesCount: u.matchesCount || 0,
+    mvpCount: u.mvpCount || 0,
+    status: 'Atleta Cadastrado',
+    isOnline: true,
+    mutualMatches: 0,
+  };
+}
+
+// GET /api/friends - Retorna a lista real de amigos do usuário autenticado (vazia para novas contas)
+app.get('/api/friends', async (req, res) => {
+  try {
+    const decoded = getAuthenticatedUserFromReq(req);
+    if (!decoded || !decoded.sub) {
+      return res.status(401).json({ message: 'Não autorizado.' });
+    }
+
+    const currentUser = await User.findById(decoded.sub);
+    if (!currentUser) {
+      return res.status(404).json({ message: 'Usuário não encontrado.' });
+    }
+
+    const friendIds = Array.isArray(currentUser.friends) ? currentUser.friends : [];
+    const validObjectIds = friendIds.filter((id) => mongoose.Types.ObjectId.isValid(id));
+
+    const friendDocs =
+      validObjectIds.length > 0
+        ? await User.find({ _id: { $in: validObjectIds } })
+        : [];
+
+    // Sugestões reais: outros usuários cadastrados no banco que ainda não são amigos
+    const suggestionsDocs = await User.find({
+      _id: { $nin: [currentUser._id, ...validObjectIds] },
+      role: 'player',
+    })
+      .sort({ createdAt: -1 })
+      .limit(10);
+
+    return res.json({
+      friends: friendDocs.map(formatPublicPlayer),
+      suggestions: suggestionsDocs.map(formatPublicPlayer),
+    });
+  } catch (err) {
+    return res.status(500).json({ message: err.message || 'Erro ao buscar amigos.' });
+  }
+});
+
+// GET /api/users/search?q=nome - Busca usuários reais no MongoDB pelo nome, apelido ou email
+app.get('/api/users/search', async (req, res) => {
+  try {
+    const decoded = getAuthenticatedUserFromReq(req);
+    if (!decoded || !decoded.sub) {
+      return res.status(401).json({ message: 'Não autorizado.' });
+    }
+
+    const q = String(req.query.q || '').trim();
+    if (!q) {
+      return res.json({ users: [] });
+    }
+
+    const currentUser = await User.findById(decoded.sub);
+    const friendSet = new Set((currentUser?.friends || []).map(String));
+
+    const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(escaped, 'i');
+
+    const foundUsers = await User.find({
+      _id: { $ne: decoded.sub },
+      $or: [{ name: regex }, { nickname: regex }, { email: regex }],
+    })
+      .sort({ name: 1 })
+      .limit(20);
+
+    return res.json({
+      users: foundUsers.map((u) => ({
+        ...formatPublicPlayer(u),
+        isFriend: friendSet.has(String(u._id)),
+      })),
+    });
+  } catch (err) {
+    return res.status(500).json({ message: err.message || 'Erro ao pesquisar usuários.' });
+  }
+});
+
+// POST /api/friends/:targetId - Adiciona um usuário à lista de amigos (vínculo mútuo no MongoDB)
+app.post('/api/friends/:targetId', async (req, res) => {
+  try {
+    const decoded = getAuthenticatedUserFromReq(req);
+    if (!decoded || !decoded.sub) {
+      return res.status(401).json({ message: 'Não autorizado.' });
+    }
+
+    const targetId = String(req.params.targetId);
+    if (!mongoose.Types.ObjectId.isValid(targetId) || targetId === String(decoded.sub)) {
+      return res.status(400).json({ message: 'ID de usuário inválido.' });
+    }
+
+    const targetUser = await User.findById(targetId);
+    if (!targetUser) {
+      return res.status(404).json({ message: 'Usuário não encontrado.' });
+    }
+
+    await User.findByIdAndUpdate(decoded.sub, {
+      $addToSet: { friends: targetId },
+    });
+    await User.findByIdAndUpdate(targetId, {
+      $addToSet: { friends: String(decoded.sub) },
+    });
+
+    return res.json({
+      message: `${targetUser.name} adicionado aos seus amigos!`,
+      friend: formatPublicPlayer(targetUser),
+    });
+  } catch (err) {
+    return res.status(500).json({ message: err.message || 'Erro ao adicionar amigo.' });
+  }
+});
+
+// DELETE /api/friends/:targetId - Remove um usuário da lista de amigos
+app.delete('/api/friends/:targetId', async (req, res) => {
+  try {
+    const decoded = getAuthenticatedUserFromReq(req);
+    if (!decoded || !decoded.sub) {
+      return res.status(401).json({ message: 'Não autorizado.' });
+    }
+
+    const targetId = String(req.params.targetId);
+    await User.findByIdAndUpdate(decoded.sub, {
+      $pull: { friends: targetId },
+    });
+    await User.findByIdAndUpdate(targetId, {
+      $pull: { friends: String(decoded.sub) },
+    });
+
+    return res.json({ ok: true });
+  } catch (err) {
+    return res.status(500).json({ message: err.message || 'Erro ao remover amigo.' });
+  }
+});
+
+// ============================================================================
+// ENDPOINTS DE PARTIDAS E LOBBIES REAIS NO MONGODB
+// ============================================================================
+
+function formatMatchForClient(doc, currentUserId) {
+  const m = doc.toObject ? doc.toObject() : doc;
+  const participant = (m.participants || []).find(
+    (p) => String(p.userId) === String(currentUserId)
+  );
+  const isHost = String(m.hostId) === String(currentUserId);
+  return {
+    id: String(m._id),
+    _id: String(m._id),
+    hostId: m.hostId,
+    title: m.title,
+    arenaId: m.arenaId,
+    arena: m.arena,
+    neighborhood: m.neighborhood || 'Região Verificada',
+    distance: m.distance || '1.5 km',
+    time: m.time,
+    date: m.time,
+    totalSlots: m.totalSlots || 14,
+    filledSlots: m.filledSlots || (m.participants?.length || 1),
+     playersCount: `${m.filledSlots || 1}/${m.totalSlots || 14}`,
+    pricePerPlayer: m.pricePerPlayer || 20,
+    neededPositions: m.neededPositions || [],
+    extras: m.extras || [],
+    role: isHost ? 'Organizador (Host)' : participant?.role || 'Atleta Participante',
+    status: participant?.status || m.status || 'Confirmada',
+    evaluated: Boolean(participant?.evaluated),
+    evaluationStars: participant?.evaluationStars || null,
+    isProHost: Boolean(m.isProHost),
+    freeBallIncluded: Boolean(m.freeBallIncluded),
+    host: {
+      id: m.hostId,
+      name: m.hostName,
+      rating: m.hostRating ?? 0,
+      isPro: Boolean(m.isProHost),
+      avatar: m.hostAvatar || '',
+    },
+    participants: m.participants || [],
+  };
+}
+
+// GET /api/lobbies - Lista partidas públicas abertas reais do MongoDB
+app.get('/api/lobbies', async (req, res) => {
+  try {
+    const matches = await Match.find({ isPublicLobby: true }).sort({ createdAt: -1 }).limit(30);
+    return res.json({
+      lobbies: matches.map((m) => formatMatchForClient(m, null)),
+    });
+  } catch (err) {
+    return res.status(500).json({ message: err.message || 'Erro ao buscar lobbies.' });
+  }
+});
+
+// GET /api/matches/my - Lista apenas as partidas criadas ou participadas pelo usuário autenticado
+app.get('/api/matches/my', async (req, res) => {
+  try {
+    const decoded = getAuthenticatedUserFromReq(req);
+    if (!decoded || !decoded.sub) {
+      return res.status(401).json({ message: 'Não autorizado.' });
+    }
+
+    const userId = String(decoded.sub);
+    const matches = await Match.find({
+      $or: [{ hostId: userId }, { 'participants.userId': userId }],
+    }).sort({ createdAt: -1 });
+
+    return res.json({
+      matches: matches.map((m) => formatMatchForClient(m, userId)),
+    });
+  } catch (err) {
+    return res.status(500).json({ message: err.message || 'Erro ao buscar suas partidas.' });
+  }
+});
+
+// POST /api/matches - Cria uma nova partida ou reserva no MongoDB para o usuário logado
+app.post('/api/matches', async (req, res) => {
+  try {
+    const decoded = getAuthenticatedUserFromReq(req);
+    if (!decoded || !decoded.sub) {
+      return res.status(401).json({ message: 'Não autorizado.' });
+    }
+
+    const user = await User.findById(decoded.sub);
+    if (!user) {
+      return res.status(404).json({ message: 'Usuário não encontrado.' });
+    }
+
+    const payload = req.body || {};
+    const isPro = Boolean(user.isPro && user.proStatus === 'active');
+
+    const newMatch = await Match.create({
+      hostId: String(user._id),
+      hostName: user.nickname ? `${user.name} "${user.nickname}"` : user.name,
+      hostAvatar: user.avatar,
+      hostRating: user.ovr || 88,
+      isProHost: isPro,
+      freeBallIncluded: isPro,
+      title: payload.title || 'Partida Oficial',
+      arenaId: payload.arenaId || '',
+      arena: payload.arena || 'Arena Esportiva',
+      neighborhood: payload.neighborhood || '',
+      distance: payload.distance || '1.5 km',
+      time: payload.time || payload.date || 'Hoje, 20:00',
+      totalSlots: Number(payload.totalSlots) || 14,
+      filledSlots: 1,
+      pricePerPlayer: Number(payload.pricePerPlayer) || 20,
+      neededPositions: Array.isArray(payload.neededPositions) ? payload.neededPositions : [],
+      extras: Array.isArray(payload.extras) ? payload.extras : [],
+      isPublicLobby: payload.isPublicLobby !== false,
+      status: payload.status || 'Confirmada',
+      participants: [
+        {
+          userId: String(user._id),
+          name: user.name,
+          avatar: user.avatar,
+          ovr: user.ovr || 88,
+          role: payload.role || 'Organizador (Host)',
+          status: payload.status || 'Confirmada',
+          evaluated: false,
+        },
+      ],
+    });
+
+    await User.findByIdAndUpdate(user._id, { $inc: { matchesCount: 1 } });
+
+    return res.status(201).json({
+      match: formatMatchForClient(newMatch, String(user._id)),
+    });
+  } catch (err) {
+    return res.status(500).json({ message: err.message || 'Erro ao criar partida.' });
+  }
+});
+
+// POST /api/matches/:id/join - Entra ou sai de um lobby público
+app.post('/api/matches/:id/join', async (req, res) => {
+  try {
+    const decoded = getAuthenticatedUserFromReq(req);
+    if (!decoded || !decoded.sub) {
+      return res.status(401).json({ message: 'Não autorizado.' });
+    }
+
+    const user = await User.findById(decoded.sub);
+    const match = await Match.findById(req.params.id);
+    if (!user || !match) {
+      return res.status(404).json({ message: 'Partida não encontrada.' });
+    }
+
+    const userId = String(user._id);
+    const isPro = Boolean(user.isPro && user.proStatus === 'active');
+    const existingIdx = match.participants.findIndex((p) => String(p.userId) === userId);
+
+    if (existingIdx >= 0 && String(match.hostId) !== userId) {
+      match.participants.splice(existingIdx, 1);
+      match.filledSlots = Math.max(1, match.participants.length);
+      await match.save();
+      return res.json({
+        joined: false,
+        match: formatMatchForClient(match, userId),
+      });
+    }
+
+    if (existingIdx < 0) {
+      match.participants.push({
+        userId,
+        name: user.name,
+        avatar: user.avatar,
+        ovr: user.ovr || 88,
+        role: isPro
+          ? `⚡ Prioridade PRO na Fila (Host: ${match.hostName})`
+          : `Solicitante (Host: ${match.hostName})`,
+        status: isPro
+          ? 'Prioridade VIP Confirmada • Topo da Fila'
+          : 'Solicitação Enviada • Aguardando Host',
+        evaluated: false,
+      });
+      match.filledSlots = match.participants.length;
+      await match.save();
+    }
+
+    return res.json({
+      joined: true,
+      match: formatMatchForClient(match, userId),
+    });
+  } catch (err) {
+    return res.status(500).json({ message: err.message || 'Erro ao participar da partida.' });
+  }
+});
+
+// DELETE /api/matches/:id - Cancela ou sai de uma partida
+app.delete('/api/matches/:id', async (req, res) => {
+  try {
+    const decoded = getAuthenticatedUserFromReq(req);
+    if (!decoded || !decoded.sub) {
+      return res.status(401).json({ message: 'Não autorizado.' });
+    }
+
+    const userId = String(decoded.sub);
+    const match = await Match.findById(req.params.id);
+    if (!match) {
+      return res.json({ ok: true });
+    }
+
+    if (String(match.hostId) === userId) {
+      await Match.findByIdAndDelete(match._id);
+    } else {
+      match.participants = match.participants.filter((p) => String(p.userId) !== userId);
+      match.filledSlots = Math.max(1, match.participants.length);
+      await match.save();
+    }
+
+    return res.json({ ok: true });
+  } catch (err) {
+    return res.status(500).json({ message: err.message || 'Erro ao cancelar partida.' });
+  }
+});
+
 // POST /api/evaluations - Computa avaliação da Arena (1 a 5 estrelas) e notas dos Jogadores (0 a 10)
 app.post('/api/evaluations', async (req, res) => {
   try {
-    const { arenaName, arenaStars, playerRatings = [] } = req.body || {};
+    const decoded = getAuthenticatedUserFromReq(req);
+    const { matchId, arenaName, arenaStars, mvpPlayerId, playerRatings = [] } = req.body || {};
 
     let updatedArena = null;
     if (arenaName && typeof arenaStars === 'number') {
@@ -1034,6 +1332,53 @@ app.post('/api/evaluations', async (req, res) => {
           reviewsCount: arena.reviewsCount,
         };
       }
+    }
+
+    // Marca a partida como avaliada para o usuário atual
+    if (matchId && mongoose.Types.ObjectId.isValid(matchId) && decoded?.sub) {
+      const match = await Match.findById(matchId);
+      if (match) {
+        const part = match.participants.find((p) => String(p.userId) === String(decoded.sub));
+        if (part) {
+          part.evaluated = true;
+          part.evaluationStars = arenaStars || 5;
+        }
+        await match.save();
+      }
+    }
+
+    // Atualiza notas reais dos jogadores avaliados na partida
+    if (Array.isArray(playerRatings)) {
+      for (const pr of playerRatings) {
+        if (pr.id && mongoose.Types.ObjectId.isValid(pr.id) && typeof pr.score === 'number') {
+          const targetUser = await User.findById(pr.id);
+          if (targetUser) {
+            const scaled = Math.min(100, Math.max(0, Math.round(pr.score * 10)));
+            const prevMatches = targetUser.matchesCount || 0;
+            const prevOvr = targetUser.ovr || 0;
+            const newOvr =
+              prevOvr === 0
+                ? scaled
+                : Math.round((prevOvr * Math.max(1, prevMatches) + scaled) / (Math.max(1, prevMatches) + 1));
+            targetUser.ovr = newOvr;
+            targetUser.fairPlay = Number(((pr.score / 2)).toFixed(2));
+            targetUser.stats = {
+              ritmo: scaled,
+              finalizacao: scaled,
+              passe: scaled,
+              defesa: scaled,
+              fisico: scaled,
+              fairPlay: scaled,
+            };
+            await targetUser.save();
+          }
+        }
+      }
+    }
+
+    // Incrementa MVP se o mvpPlayerId for um usuário válido do banco
+    if (mvpPlayerId && mongoose.Types.ObjectId.isValid(mvpPlayerId)) {
+      await User.findByIdAndUpdate(mvpPlayerId, { $inc: { mvpCount: 1 } });
     }
 
     return res.json({

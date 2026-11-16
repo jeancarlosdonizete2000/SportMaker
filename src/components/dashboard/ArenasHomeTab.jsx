@@ -32,6 +32,7 @@ function FiveStarsDisplay({ rating }) {
 
 export default function ArenasHomeTab({
   arenas,
+  allArenas = arenas,
   selectedCategory,
   onCategoryChange,
   searchQuery,
@@ -115,8 +116,8 @@ export default function ArenasHomeTab({
             const active = selectedCategory === cat.id;
             const realCount =
               cat.id === 'all'
-                ? arenas.length
-                : arenas.filter((a) => a.sport === cat.id).length;
+                ? allArenas.length
+                : allArenas.filter((a) => a.sport === cat.id).length;
             return (
               <button
                 key={cat.id}
@@ -164,6 +165,16 @@ export default function ArenasHomeTab({
       </div>
 
       {/* Arenas Showcase Grid with 5-Star Rating & Total Reviews */}
+      {arenas.length === 0 ? (
+        <div className="glass-card rounded-3xl p-10 border border-white/10 text-center space-y-2">
+          <p className="font-display font-bold text-lg text-white">
+            Nenhuma arena encontrada no banco de dados para este filtro.
+          </p>
+          <p className="text-xs text-slate-400">
+            Altere o filtro de esporte, aumente o raio de distância ou aguarde novas arenas serem cadastradas pelos proprietários.
+          </p>
+        </div>
+      ) : (
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {arenas.map((arena) => {
           const availableCount = arena.slots.filter((s) => s.status === 'available').length;
@@ -275,6 +286,7 @@ export default function ArenasHomeTab({
           );
         })}
       </div>
+      )}
     </div>
   );
 }
