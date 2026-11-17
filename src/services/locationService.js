@@ -100,6 +100,88 @@ export function calculateHaversineDistanceKm(lat1, lng1, lat2, lng2) {
   return Number(distance.toFixed(1));
 }
 
+const STATE_NAME_TO_UF = {
+  acre: 'AC',
+  alagoas: 'AL',
+  amapa: 'AP',
+  amazonas: 'AM',
+  bahia: 'BA',
+  ceara: 'CE',
+  'distrito federal': 'DF',
+  'espirito santo': 'ES',
+  goias: 'GO',
+  maranhao: 'MA',
+  'mato grosso': 'MT',
+  'mato grosso do sul': 'MS',
+  'minas gerais': 'MG',
+  para: 'PA',
+  paraiba: 'PB',
+  parana: 'PR',
+  pernambuco: 'PE',
+  piaui: 'PI',
+  'rio de janeiro': 'RJ',
+  'rio grande do norte': 'RN',
+  'rio grande do sul': 'RS',
+  rondonia: 'RO',
+  roraima: 'RR',
+  'santa catarina': 'SC',
+  'sao paulo': 'SP',
+  sergipe: 'SE',
+  tocantins: 'TO',
+};
+
+function resolveStateCode(addr = {}) {
+  const iso = addr['ISO3166-2-lvl4'] || addr.state_code;
+  if (iso && typeof iso === 'string') {
+    const parts = iso.split('-');
+    const code = (parts[parts.length - 1] || '').trim().toUpperCase();
+    if (code.length === 2) return code;
+  }
+
+  if (addr.state && typeof addr.state === 'string') {
+    const clean = addr.state
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim();
+    if (STATE_NAME_TO_UF[clean]) return STATE_NAME_TO_UF[clean];
+    if (addr.state.trim().length === 2) return addr.state.trim().toUpperCase();
+    return addr.state.trim();
+  }
+
+  return '';
+}
+
+function resolveCityName(addr = {}) {
+  return (
+    addr.city ||
+    addr.town ||
+    addr.municipality ||
+    addr.village ||
+    addr.county ||
+    addr.city_district ||
+    addr.state_district ||
+    ''
+  );
+}
+
+function resolveNeighborhoodName(addr = {}, city = '') {
+  const candidate =
+    addr.suburb ||
+    addr.neighbourhood ||
+    addr.quarter ||
+    addr.residential ||
+    addr.city_district ||
+    addr.district ||
+    addr.hamlet ||
+    addr.road ||
+    '';
+  if (candidate && candidate.toLowerCase() !== city.toLowerCase()) {
+    return candidate;
+  }
+  return candidate || city || 'Região Central';
+}
+
 export const locationService = {
   getStoredConsent() {
     try {
@@ -136,34 +218,70 @@ export const locationService = {
   },
 
   /**
-   * Consulta a API de Geocodificação Reversa (Nominatim OpenStreetMap / BigDataCloud)
-   * para converter latitude e longitude no nome do bairro e cidade.
+   * Consulta a API de Geocodificação Reversa (Nominatim OpenStreetMap + fallback BigDataCloud)
+   * para converter latitude e longitude no nome exato do bairro, cidade e estado (UF),
+   * sem forçar "São Paulo" ou "SP" quando o usuário estiver em outra cidade/estado.
    */
   async reverseGeocode(lat, lng) {
     try {
-      const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&accept-language=pt-BR`;
+      const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1&accept-language=pt-BR`;
       const response = await fetch(url);
       if (response.ok) {
         const data = await response.json();
         const addr = data.address || {};
+        const city = resolveCityName(addr);
+        const stateCode = resolveStateCode(addr);
+        const neighborhood = resolveNeighborhoodName(addr, city);
+
+        if (city || neighborhood) {
+          const cityWithState =
+            city && stateCode
+              ? `${city} - ${stateCode}`
+              : city || stateCode || 'Brasil';
+          const label =
+            neighborhood && city && neighborhood.toLowerCase() !== city.toLowerCase()
+              ? `${neighborhood}, ${cityWithState}`
+              : cityWithState;
+
+          return {
+            neighborhood: neighborhood || city || 'Localização GPS',
+            city: cityWithState,
+            label,
+          };
+        }
+      }
+    } catch {
+      // Tenta segundo provedor gratuito abaixo
+    }
+
+    // Fallback secundário via BigDataCloud (gratuito, sem chave e com CORS aberto)
+    try {
+      const bdcUrl = `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lng}&localityLanguage=pt`;
+      const bdcRes = await fetch(bdcUrl);
+      if (bdcRes.ok) {
+        const bdc = await bdcRes.json();
+        const city = bdc.city || bdc.locality || '';
+        const stateCode = resolveStateCode({
+          'ISO3166-2-lvl4': bdc.principalSubdivisionCode,
+          state: bdc.principalSubdivision,
+        });
         const neighborhood =
-          addr.neighbourhood ||
-          addr.quarter ||
-          addr.suburb ||
-          addr.city_district ||
-          addr.town ||
-          'Região Central';
-        const city =
-          addr.city || addr.municipality || addr.state_district || 'São Paulo';
-        const stateCode = addr['ISO3166-2-lvl4']?.split('-')[1] || 'SP';
+          bdc.locality && bdc.locality !== city ? bdc.locality : city || 'Região Central';
+        const cityWithState =
+          city && stateCode ? `${city} - ${stateCode}` : city || stateCode || 'Brasil';
+        const label =
+          neighborhood && city && neighborhood.toLowerCase() !== city.toLowerCase()
+            ? `${neighborhood}, ${cityWithState}`
+            : cityWithState;
+
         return {
           neighborhood,
-          city: `${city} - ${stateCode}`,
-          label: `${neighborhood}, ${city} - ${stateCode}`,
+          city: cityWithState,
+          label,
         };
       }
     } catch {
-      // Fallback caso o navegador esteja offline
+      // Fallback caso o navegador esteja totalmente offline
     }
 
     return {
@@ -187,21 +305,31 @@ export const locationService = {
         const results = await response.json();
         return results.map((item) => {
           const addr = item.address || {};
+          const city = resolveCityName(addr);
+          const stateCode = resolveStateCode(addr);
           const neighborhood =
+            addr.suburb ||
             addr.neighbourhood ||
             addr.quarter ||
-            addr.suburb ||
             addr.city_district ||
             addr.road ||
             item.name ||
+            city ||
             query.trim();
-          const city =
-            addr.city || addr.town || addr.municipality || addr.state || 'SP';
+          const cityWithState =
+            city && stateCode
+              ? `${city} - ${stateCode}`
+              : city || stateCode || 'Brasil';
+          const label =
+            neighborhood && city && neighborhood.toLowerCase() !== city.toLowerCase()
+              ? `${neighborhood}, ${cityWithState}`
+              : cityWithState;
+
           return {
             id: String(item.place_id),
-            label: `${neighborhood}, ${city}`,
+            label,
             neighborhood,
-            city,
+            city: cityWithState,
             lat: Number(item.lat),
             lng: Number(item.lon),
           };

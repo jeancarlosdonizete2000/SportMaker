@@ -33,7 +33,7 @@ export default function LocationConsentModal({
   const [searchingAddress, setSearchingAddress] = useState(false);
   const [apiResults, setApiResults] = useState([]);
   const [customNeighborhood, setCustomNeighborhood] = useState('');
-  const [customCity, setCustomCity] = useState('São Paulo - SP');
+  const [customCity, setCustomCity] = useState('');
 
   useEffect(() => {
     setConsentChecked(initialConsentAccepted);
@@ -91,10 +91,10 @@ export default function LocationConsentModal({
 
     const locationData = {
       mode: 'manual',
-      lat: presetOrResult.lat || -23.5955,
-      lng: presetOrResult.lng || -46.6865,
+      lat: presetOrResult.lat || null,
+      lng: presetOrResult.lng || null,
       neighborhood: presetOrResult.neighborhood,
-      city: presetOrResult.city || 'São Paulo - SP',
+      city: presetOrResult.city || '',
       label: presetOrResult.label,
       updatedAt: new Date().toISOString(),
     };
@@ -115,13 +115,29 @@ export default function LocationConsentModal({
       return;
     }
 
+    const typedQuery = customCity.trim()
+      ? `${customNeighborhood.trim()}, ${customCity.trim()}`
+      : customNeighborhood.trim();
+
+    let resolvedGeo = null;
+    try {
+      const found = await locationService.searchAddressQuery(typedQuery);
+      if (found && found.length > 0) {
+        resolvedGeo = found[0];
+      }
+    } catch {
+      // segue com texto digitado
+    }
+
     const locationData = {
       mode: 'manual',
-      lat: -23.5955,
-      lng: -46.6865,
+      lat: resolvedGeo?.lat || null,
+      lng: resolvedGeo?.lng || null,
       neighborhood: customNeighborhood.trim(),
-      city: customCity.trim() || 'São Paulo - SP',
-      label: `${customNeighborhood.trim()}, ${customCity.trim() || 'SP'}`,
+      city: customCity.trim() || resolvedGeo?.city || '',
+      label: customCity.trim()
+        ? `${customNeighborhood.trim()}, ${customCity.trim()}`
+        : resolvedGeo?.label || customNeighborhood.trim(),
       updatedAt: new Date().toISOString(),
     };
 
@@ -216,11 +232,10 @@ export default function LocationConsentModal({
           <button
             type="button"
             onClick={() => setActiveTab('gps')}
-            className={`py-2.5 px-3 rounded-xl text-xs font-display font-bold flex items-center justify-center gap-2 transition-all ${
-              activeTab === 'gps'
+            className={`py-2.5 px-3 rounded-xl text-xs font-display font-bold flex items-center justify-center gap-2 transition-all ${activeTab === 'gps'
                 ? 'bg-neon text-dark-950 shadow-neon'
                 : 'text-slate-300 hover:text-white'
-            }`}
+              }`}
           >
             <Navigation className="w-4 h-4" />
             <span>Detectar via GPS (API)</span>
@@ -229,11 +244,10 @@ export default function LocationConsentModal({
           <button
             type="button"
             onClick={() => setActiveTab('manual')}
-            className={`py-2.5 px-3 rounded-xl text-xs font-display font-bold flex items-center justify-center gap-2 transition-all ${
-              activeTab === 'manual'
+            className={`py-2.5 px-3 rounded-xl text-xs font-display font-bold flex items-center justify-center gap-2 transition-all ${activeTab === 'manual'
                 ? 'bg-emerald-400 text-dark-950 shadow-[0_0_20px_rgba(52,211,153,0.35)]'
                 : 'text-slate-300 hover:text-white'
-            }`}
+              }`}
           >
             <MapPin className="w-4 h-4" />
             <span>Marcar Manualmente</span>
@@ -259,11 +273,10 @@ export default function LocationConsentModal({
               type="button"
               disabled={loadingGps}
               onClick={handleUseBrowserGps}
-              className={`w-full py-3.5 px-5 rounded-xl font-display font-extrabold text-xs sm:text-sm transition-all flex items-center justify-center gap-2 ${
-                consentChecked
+              className={`w-full py-3.5 px-5 rounded-xl font-display font-extrabold text-xs sm:text-sm transition-all flex items-center justify-center gap-2 ${consentChecked
                   ? 'bg-neon hover:bg-neon-400 text-dark-950 shadow-neon'
                   : 'bg-white/10 text-slate-400 cursor-not-allowed'
-              }`}
+                }`}
             >
               {consentChecked ? (
                 <Sparkles className="w-4 h-4" />
@@ -274,8 +287,8 @@ export default function LocationConsentModal({
                 {loadingGps
                   ? 'Consultando Satélite / API de Geolocalização...'
                   : consentChecked
-                  ? 'Ativar Minha Localização Exata Agora'
-                  : 'Aceite o Termo Acima para Liberar o GPS'}
+                    ? 'Ativar Minha Localização Exata Agora'
+                    : 'Aceite o Termo Acima para Liberar o GPS'}
               </span>
             </button>
 
