@@ -205,13 +205,15 @@ export default function ArenasHomeTab({
                   {/* 5 Stars + Reviews Count Overlay */}
                   <div className="absolute top-3.5 right-3.5 bg-dark-950/90 backdrop-blur-md border border-amber-400/30 px-3 py-1.5 rounded-2xl flex flex-col items-end">
                     <div className="flex items-center gap-1.5">
-                      <FiveStarsDisplay rating={arena.rating} />
+                      <FiveStarsDisplay rating={(arena.reviewsCount || 0) > 0 ? arena.rating : 0} />
                       <span className="font-display font-black text-xs text-amber-400">
-                        {arena.rating.toFixed(1)}
+                        {(arena.reviewsCount || 0) > 0 ? Number(arena.rating || 0).toFixed(1) : '—'}
                       </span>
                     </div>
                     <span className="text-[10px] font-semibold text-slate-300">
-                      {arena.reviewsCount} avaliações verificadas
+                      {(arena.reviewsCount || 0) > 0
+                        ? `${arena.reviewsCount} ${arena.reviewsCount === 1 ? 'avaliação real' : 'avaliações reais'}`
+                        : 'Sem avaliações ainda'}
                     </span>
                   </div>
 
@@ -236,13 +238,15 @@ export default function ArenasHomeTab({
                   {/* Star Rating Breakdown Bar */}
                   <div className="p-3 rounded-2xl bg-dark-950/80 border border-white/10 flex flex-wrap items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
-                      <FiveStarsDisplay rating={arena.rating} />
+                      <FiveStarsDisplay rating={(arena.reviewsCount || 0) > 0 ? arena.rating : 0} />
                       <span className="text-xs font-bold text-white">
-                        {arena.rating} / 5.0 estrelas
+                        {(arena.reviewsCount || 0) > 0
+                          ? `${Number(arena.rating || 0).toFixed(1)} / 5.0 estrelas`
+                          : 'Nova Arena'}
                       </span>
                     </div>
                     <span className="text-xs text-slate-400 font-medium">
-                      <strong className="text-neon">{arena.reviewsCount} avaliações</strong> de jogadores
+                      <strong className="text-neon">{arena.reviewsCount || 0} avaliações</strong> de jogadores
                     </span>
                   </div>
 

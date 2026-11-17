@@ -30,6 +30,7 @@ export default function CreateMatchModal({
     const newLobby = {
       id: `lobby_${Date.now()}`,
       title: title.trim(),
+      arenaId: String(selectedArena._id || selectedArena.id || ''),
       arena: `${selectedArena.name} • Quadra Principal`,
       time,
       distance: selectedArena.distance,

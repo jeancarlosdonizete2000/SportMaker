@@ -95,14 +95,14 @@ export default function PlayerProfileSection() {
               {/* 2. Switch Card Skin Theme */}
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-2">
-                  2. Escolha o Tema Visual do seu Card:
+                  2. Escolha a Cartinha EA FC (Clássicas & Animadas PRO ⚡🔥👑):
                 </label>
-                <div className="grid grid-cols-3 gap-2.5">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                   {CARD_THEMES.map((theme, idx) => (
                     <button
                       key={theme.id}
                       onClick={() => setActiveThemeIndex(idx)}
-                      className={`py-2.5 px-3 rounded-xl text-xs font-bold border transition-all ${
+                      className={`py-2.5 px-2.5 rounded-xl text-xs font-bold border transition-all truncate ${
                         activeThemeIndex === idx
                           ? `${theme.accentBg} border-transparent`
                           : 'bg-dark-950/80 text-slate-300 border-white/10 hover:border-white/30'

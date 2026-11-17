@@ -56,6 +56,7 @@ const UserSchema = new mongoose.Schema(
     favoriteSport: { type: String, default: 'society' },
     positionRole: { type: String, default: 'Atleta Sport Maker' },
     customTag: { type: String, default: 'Atleta Iniciante' },
+    cardThemeId: { type: String, default: 'neon-lime' },
     ovr: { type: Number, default: 0 },
     pixKey: { type: String, default: '' },
     avatar: { type: String, default: '' },
@@ -96,6 +97,8 @@ const UserSchema = new mongoose.Schema(
       fairPlay: { type: Number, default: 0 },
     },
     friends: { type: [String], default: [] },
+    friendRequestsReceived: { type: [String], default: [] },
+    friendRequestsSent: { type: [String], default: [] },
   },
   { timestamps: true }
 );
@@ -171,8 +174,22 @@ const ArenaSchema = new mongoose.Schema(
       default:
         'Complexo esportivo completo com quadras iluminadas, vestiários e área de convivência pós-jogo.',
     },
-    rating: { type: Number, default: 4.9 },
-    reviewsCount: { type: Number, default: 42 },
+    rating: { type: Number, default: 0 },
+    reviewsCount: { type: Number, default: 0 },
+    reviews: {
+      type: [
+        {
+          userId: { type: String, default: '' },
+          userName: { type: String, default: 'Atleta Sport Maker' },
+          userAvatar: { type: String, default: '' },
+          stars: { type: Number, required: true },
+          tierLabel: { type: String, default: '' },
+          comment: { type: String, default: '' },
+          createdAt: { type: Date, default: Date.now },
+        },
+      ],
+      default: [],
+    },
     pricePerHour: { type: Number, default: 200 },
     pricePerPlayer: { type: Number, default: 20 },
     image: {
@@ -470,6 +487,7 @@ app.put('/api/auth/profile', async (req, res) => {
       avatar,
       positionRole,
       customTag,
+      cardThemeId,
       pixKey,
       locationConsentAccepted,
       userLocation,
@@ -480,6 +498,7 @@ app.put('/api/auth/profile', async (req, res) => {
     if (typeof avatar === 'string') updates.avatar = avatar.trim();
     if (typeof positionRole === 'string') updates.positionRole = positionRole;
     if (typeof customTag === 'string') updates.customTag = customTag;
+    if (typeof cardThemeId === 'string') updates.cardThemeId = cardThemeId;
     if (typeof pixKey === 'string') updates.pixKey = pixKey;
     if (typeof locationConsentAccepted === 'boolean') {
       updates.locationConsentAccepted = locationConsentAccepted;
@@ -577,8 +596,9 @@ async function ensureOwnerDefaultArenaAndBookings(ownerUser) {
       openingHours: 'Seg a Dom • 07:00 às 00:00',
       description:
         'Complexo esportivo com quadras iluminadas, vestiários e área de convivência pós-jogo.',
-      rating: 5.0,
+      rating: 0,
       reviewsCount: 0,
+      reviews: [],
       pricePerHour: 200,
       pricePerPlayer: 20,
       image:
@@ -722,6 +742,9 @@ app.post('/api/owner/arenas', async (req, res) => {
       description:
         payload.description ||
         'Complexo esportivo com estrutura completa para atletas, vestiários e área de lazer.',
+      rating: 0,
+      reviewsCount: 0,
+      reviews: [],
       pricePerHour: Number(payload.pricePerHour) || 180,
       pricePerPlayer: Number(payload.pricePerPlayer) || 20,
       image:
@@ -957,7 +980,7 @@ function formatPublicPlayer(u) {
   };
 }
 
-// GET /api/friends - Retorna a lista real de amigos do usuário autenticado (vazia para novas contas)
+// GET /api/friends - Retorna a lista real de amigos, solicitações pendentes (recebidas/enviadas) e sugestões
 app.get('/api/friends', async (req, res) => {
   try {
     const decoded = getAuthenticatedUserFromReq(req);
@@ -970,17 +993,31 @@ app.get('/api/friends', async (req, res) => {
       return res.status(404).json({ message: 'Usuário não encontrado.' });
     }
 
-    const friendIds = Array.isArray(currentUser.friends) ? currentUser.friends : [];
-    const validObjectIds = friendIds.filter((id) => mongoose.Types.ObjectId.isValid(id));
+    const friendIds = (currentUser.friends || []).filter((id) =>
+      mongoose.Types.ObjectId.isValid(id)
+    );
+    const receivedIds = (currentUser.friendRequestsReceived || []).filter((id) =>
+      mongoose.Types.ObjectId.isValid(id)
+    );
+    const sentIds = (currentUser.friendRequestsSent || []).filter((id) =>
+      mongoose.Types.ObjectId.isValid(id)
+    );
 
-    const friendDocs =
-      validObjectIds.length > 0
-        ? await User.find({ _id: { $in: validObjectIds } })
-        : [];
+    const [friendDocs, receivedDocs, sentDocs] = await Promise.all([
+      friendIds.length > 0 ? User.find({ _id: { $in: friendIds } }) : [],
+      receivedIds.length > 0 ? User.find({ _id: { $in: receivedIds } }) : [],
+      sentIds.length > 0 ? User.find({ _id: { $in: sentIds } }) : [],
+    ]);
 
-    // Sugestões reais: outros usuários cadastrados no banco que ainda não são amigos
+    const excludeFromSuggestions = [
+      currentUser._id,
+      ...friendIds,
+      ...receivedIds,
+      ...sentIds,
+    ];
+
     const suggestionsDocs = await User.find({
-      _id: { $nin: [currentUser._id, ...validObjectIds] },
+      _id: { $nin: excludeFromSuggestions },
       role: 'player',
     })
       .sort({ createdAt: -1 })
@@ -988,6 +1025,8 @@ app.get('/api/friends', async (req, res) => {
 
     return res.json({
       friends: friendDocs.map(formatPublicPlayer),
+      receivedRequests: receivedDocs.map(formatPublicPlayer),
+      sentRequests: sentDocs.map(formatPublicPlayer),
       suggestions: suggestionsDocs.map(formatPublicPlayer),
     });
   } catch (err) {
@@ -1010,6 +1049,8 @@ app.get('/api/users/search', async (req, res) => {
 
     const currentUser = await User.findById(decoded.sub);
     const friendSet = new Set((currentUser?.friends || []).map(String));
+    const receivedSet = new Set((currentUser?.friendRequestsReceived || []).map(String));
+    const sentSet = new Set((currentUser?.friendRequestsSent || []).map(String));
 
     const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const regex = new RegExp(escaped, 'i');
@@ -1022,17 +1063,22 @@ app.get('/api/users/search', async (req, res) => {
       .limit(20);
 
     return res.json({
-      users: foundUsers.map((u) => ({
-        ...formatPublicPlayer(u),
-        isFriend: friendSet.has(String(u._id)),
-      })),
+      users: foundUsers.map((u) => {
+        const uid = String(u._id);
+        return {
+          ...formatPublicPlayer(u),
+          isFriend: friendSet.has(uid),
+          hasReceivedRequest: receivedSet.has(uid),
+          hasSentRequest: sentSet.has(uid),
+        };
+      }),
     });
   } catch (err) {
     return res.status(500).json({ message: err.message || 'Erro ao pesquisar usuários.' });
   }
 });
 
-// POST /api/friends/:targetId - Adiciona um usuário à lista de amigos (vínculo mútuo no MongoDB)
+// POST /api/friends/:targetId - Envia solicitação de amizade (ou aceita automaticamente se o outro já enviou)
 app.post('/api/friends/:targetId', async (req, res) => {
   try {
     const decoded = getAuthenticatedUserFromReq(req);
@@ -1040,8 +1086,77 @@ app.post('/api/friends/:targetId', async (req, res) => {
       return res.status(401).json({ message: 'Não autorizado.' });
     }
 
+    const currentUserId = String(decoded.sub);
     const targetId = String(req.params.targetId);
-    if (!mongoose.Types.ObjectId.isValid(targetId) || targetId === String(decoded.sub)) {
+    if (!mongoose.Types.ObjectId.isValid(targetId) || targetId === currentUserId) {
+      return res.status(400).json({ message: 'ID de usuário inválido.' });
+    }
+
+    const [currentUser, targetUser] = await Promise.all([
+      User.findById(currentUserId),
+      User.findById(targetId),
+    ]);
+
+    if (!currentUser || !targetUser) {
+      return res.status(404).json({ message: 'Usuário não encontrado.' });
+    }
+
+    // Se já são amigos
+    if ((currentUser.friends || []).map(String).includes(targetId)) {
+      return res.json({
+        status: 'already_friends',
+        message: `${targetUser.name} já está na sua lista de amigos.`,
+        user: formatPublicPlayer(targetUser),
+      });
+    }
+
+    // Se o usuário alvo já tinha enviado solicitação para mim, aceita direto!
+    if ((currentUser.friendRequestsReceived || []).map(String).includes(targetId)) {
+      await User.findByIdAndUpdate(currentUserId, {
+        $pull: { friendRequestsReceived: targetId, friendRequestsSent: targetId },
+        $addToSet: { friends: targetId },
+      });
+      await User.findByIdAndUpdate(targetId, {
+        $pull: { friendRequestsSent: currentUserId, friendRequestsReceived: currentUserId },
+        $addToSet: { friends: currentUserId },
+      });
+
+      return res.json({
+        status: 'accepted',
+        message: `Solicitação de amizade de ${targetUser.name} aceita!`,
+        friend: formatPublicPlayer(targetUser),
+      });
+    }
+
+    // Caso contrário, registra a solicitação pendente para o destinatário aceitar ou recusar
+    await User.findByIdAndUpdate(currentUserId, {
+      $addToSet: { friendRequestsSent: targetId },
+    });
+    await User.findByIdAndUpdate(targetId, {
+      $addToSet: { friendRequestsReceived: currentUserId },
+    });
+
+    return res.json({
+      status: 'request_sent',
+      message: `Solicitação de amizade enviada para ${targetUser.name}!`,
+      user: formatPublicPlayer(targetUser),
+    });
+  } catch (err) {
+    return res.status(500).json({ message: err.message || 'Erro ao enviar solicitação de amizade.' });
+  }
+});
+
+// POST /api/friends/:targetId/accept - Aceita uma solicitação de amizade recebida
+app.post('/api/friends/:targetId/accept', async (req, res) => {
+  try {
+    const decoded = getAuthenticatedUserFromReq(req);
+    if (!decoded || !decoded.sub) {
+      return res.status(401).json({ message: 'Não autorizado.' });
+    }
+
+    const currentUserId = String(decoded.sub);
+    const targetId = String(req.params.targetId);
+    if (!mongoose.Types.ObjectId.isValid(targetId)) {
       return res.status(400).json({ message: 'ID de usuário inválido.' });
     }
 
@@ -1050,23 +1165,54 @@ app.post('/api/friends/:targetId', async (req, res) => {
       return res.status(404).json({ message: 'Usuário não encontrado.' });
     }
 
-    await User.findByIdAndUpdate(decoded.sub, {
+    await User.findByIdAndUpdate(currentUserId, {
+      $pull: { friendRequestsReceived: targetId, friendRequestsSent: targetId },
       $addToSet: { friends: targetId },
     });
     await User.findByIdAndUpdate(targetId, {
-      $addToSet: { friends: String(decoded.sub) },
+      $pull: { friendRequestsSent: currentUserId, friendRequestsReceived: currentUserId },
+      $addToSet: { friends: currentUserId },
     });
 
     return res.json({
-      message: `${targetUser.name} adicionado aos seus amigos!`,
+      status: 'accepted',
+      message: `Agora você e ${targetUser.name} são amigos!`,
       friend: formatPublicPlayer(targetUser),
     });
   } catch (err) {
-    return res.status(500).json({ message: err.message || 'Erro ao adicionar amigo.' });
+    return res.status(500).json({ message: err.message || 'Erro ao aceitar solicitação.' });
   }
 });
 
-// DELETE /api/friends/:targetId - Remove um usuário da lista de amigos
+// POST /api/friends/:targetId/reject - Recusa uma solicitação recebida (ou cancela uma enviada)
+app.post('/api/friends/:targetId/reject', async (req, res) => {
+  try {
+    const decoded = getAuthenticatedUserFromReq(req);
+    if (!decoded || !decoded.sub) {
+      return res.status(401).json({ message: 'Não autorizado.' });
+    }
+
+    const currentUserId = String(decoded.sub);
+    const targetId = String(req.params.targetId);
+
+    await User.findByIdAndUpdate(currentUserId, {
+      $pull: { friendRequestsReceived: targetId, friendRequestsSent: targetId },
+    });
+    await User.findByIdAndUpdate(targetId, {
+      $pull: { friendRequestsSent: currentUserId, friendRequestsReceived: currentUserId },
+    });
+
+    return res.json({
+      ok: true,
+      status: 'rejected',
+      message: 'Solicitação de amizade removida.',
+    });
+  } catch (err) {
+    return res.status(500).json({ message: err.message || 'Erro ao recusar solicitação.' });
+  }
+});
+
+// DELETE /api/friends/:targetId - Remove um usuário da lista de amigos ou cancela solicitação
 app.delete('/api/friends/:targetId', async (req, res) => {
   try {
     const decoded = getAuthenticatedUserFromReq(req);
@@ -1074,12 +1220,21 @@ app.delete('/api/friends/:targetId', async (req, res) => {
       return res.status(401).json({ message: 'Não autorizado.' });
     }
 
+    const currentUserId = String(decoded.sub);
     const targetId = String(req.params.targetId);
-    await User.findByIdAndUpdate(decoded.sub, {
-      $pull: { friends: targetId },
+    await User.findByIdAndUpdate(currentUserId, {
+      $pull: {
+        friends: targetId,
+        friendRequestsReceived: targetId,
+        friendRequestsSent: targetId,
+      },
     });
     await User.findByIdAndUpdate(targetId, {
-      $pull: { friends: String(decoded.sub) },
+      $pull: {
+        friends: currentUserId,
+        friendRequestsReceived: currentUserId,
+        friendRequestsSent: currentUserId,
+      },
     });
 
     return res.json({ ok: true });
@@ -1307,31 +1462,70 @@ app.delete('/api/matches/:id', async (req, res) => {
   }
 });
 
-// POST /api/evaluations - Computa avaliação da Arena (1 a 5 estrelas) e notas dos Jogadores (0 a 10)
+// POST /api/evaluations - Computa avaliação real da Arena (1 a 5 estrelas + comentário) e notas dos Jogadores (0 a 10)
 app.post('/api/evaluations', async (req, res) => {
   try {
     const decoded = getAuthenticatedUserFromReq(req);
-    const { matchId, arenaName, arenaStars, mvpPlayerId, playerRatings = [] } = req.body || {};
+    const {
+      matchId,
+      arenaId,
+      arenaName,
+      arenaStars,
+      arenaTierLabel,
+      arenaComment,
+      mvpPlayerId,
+      playerRatings = [],
+    } = req.body || {};
+
+    let evaluatorUser = null;
+    if (decoded?.sub && mongoose.Types.ObjectId.isValid(decoded.sub)) {
+      evaluatorUser = await User.findById(decoded.sub);
+    }
 
     let updatedArena = null;
-    if (arenaName && typeof arenaStars === 'number') {
-      const arena = await Arena.findOne({
-        name: { $regex: new RegExp(arenaName.split('•')[0].trim(), 'i') },
-      });
+    if (typeof arenaStars === 'number' && arenaStars >= 1 && arenaStars <= 5) {
+      let arena = null;
+      if (arenaId && mongoose.Types.ObjectId.isValid(arenaId)) {
+        arena = await Arena.findById(arenaId);
+      }
+      if (!arena && arenaName) {
+        const cleanArenaName = arenaName
+          .split('•')[0]
+          .trim()
+          .replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        arena = await Arena.findOne({
+          name: { $regex: new RegExp(cleanArenaName, 'i') },
+        });
+      }
+
       if (arena) {
-        const currentCount = arena.reviewsCount || 0;
-        const currentRating = arena.rating || 5.0;
-        const newCount = currentCount + 1;
-        const newRating = Number(
-          ((currentRating * currentCount + arenaStars) / newCount).toFixed(1)
-        );
+        const currentReviews = Array.isArray(arena.reviews) ? arena.reviews : [];
+        currentReviews.unshift({
+          userId: evaluatorUser ? String(evaluatorUser._id) : '',
+          userName: evaluatorUser?.name || 'Atleta Verificado',
+          userAvatar: evaluatorUser?.avatar || '',
+          stars: arenaStars,
+          tierLabel: arenaTierLabel || `${arenaStars} Estrelas`,
+          comment: (arenaComment || '').trim(),
+          createdAt: new Date(),
+        });
+
+        arena.reviews = currentReviews;
+        const newCount = currentReviews.length;
+        const sumStars = currentReviews.reduce((acc, r) => acc + (Number(r.stars) || 0), 0);
+        const newRating = Number((sumStars / newCount).toFixed(1));
+
         arena.reviewsCount = newCount;
         arena.rating = newRating;
         await arena.save();
+
         updatedArena = {
+          _id: String(arena._id),
+          id: String(arena._id),
           name: arena.name,
           rating: arena.rating,
           reviewsCount: arena.reviewsCount,
+          reviews: arena.reviews,
         };
       }
     }

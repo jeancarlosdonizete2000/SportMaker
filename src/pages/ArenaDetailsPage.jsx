@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -15,6 +15,7 @@ import {
   Navigation,
 } from 'lucide-react';
 import { ARENAS_DATA } from '../data/mockData';
+import { ownerService } from '../services/ownerService';
 
 function FiveStarsDisplay({ rating }) {
   const rounded = Math.round(rating);
@@ -35,20 +36,36 @@ function FiveStarsDisplay({ rating }) {
 }
 
 export default function ArenaDetailsPage({
-  arenas = ARENAS_DATA,
+  arenas = [],
   selectedSlots,
   onSelectSlot,
   onScheduleMatch,
 }) {
   const { arenaId } = useParams();
   const navigate = useNavigate();
+  const [fetchedArenas, setFetchedArenas] = useState([]);
+
+  useEffect(() => {
+    if (!arenas || arenas.length === 0) {
+      ownerService
+        .getPublicArenas()
+        .then((list) => {
+          if (Array.isArray(list)) {
+            setFetchedArenas(list.map((a) => ({ ...a, id: a._id })));
+          }
+        })
+        .catch(() => {});
+    }
+  }, [arenas]);
+
+  const activeList = arenas && arenas.length > 0 ? arenas : fetchedArenas;
 
   const arena =
-    arenas.find(
+    activeList.find(
       (a) => String(a.id) === String(arenaId) || String(a._id) === String(arenaId)
     ) ||
     ARENAS_DATA.find((a) => String(a.id) === String(arenaId)) ||
-    arenas[0] ||
+    activeList[0] ||
     ARENAS_DATA[0];
 
   const [selectedCourtId, setSelectedCourtId] = useState(
@@ -148,13 +165,15 @@ export default function ArenaDetailsPage({
               {/* 5 Star Rating & Total Reviews */}
               <div className="p-3.5 rounded-2xl bg-dark-950 border border-amber-400/30 flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <FiveStarsDisplay rating={arena.rating} />
+                  <FiveStarsDisplay rating={(arena.reviewsCount || 0) > 0 ? arena.rating : 0} />
                   <span className="font-display font-black text-base text-amber-400">
-                    {arena.rating.toFixed(1)}
+                    {(arena.reviewsCount || 0) > 0 ? Number(arena.rating || 0).toFixed(1) : '—'}
                   </span>
                 </div>
                 <span className="text-xs font-semibold text-slate-300">
-                  {arena.reviewsCount} avaliações de atletas
+                  {(arena.reviewsCount || 0) > 0
+                    ? `${arena.reviewsCount} ${arena.reviewsCount === 1 ? 'avaliação de atleta' : 'avaliações de atletas'}`
+                    : 'Nenhuma avaliação ainda'}
                 </span>
               </div>
 
@@ -395,6 +414,64 @@ export default function ArenaDetailsPage({
             <span>Agendar Partida às {chosenSlot}</span>
           </button>
         </div>
+      </div>
+
+      {/* Real Reviews Section */}
+      <div className="space-y-4">
+        <div>
+          <span className="text-xs font-bold uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
+            <Star className="w-4 h-4 fill-amber-400" /> Avaliações Reais da Comunidade
+          </span>
+          <h2 className="font-display font-black text-xl sm:text-2xl text-white mt-0.5">
+            O que os Atletas Dizem sobre esta Arena ({arena.reviewsCount || 0})
+          </h2>
+        </div>
+
+        {!arena.reviews || arena.reviews.length === 0 ? (
+          <div className="glass-card rounded-2xl p-6 border border-white/10 text-xs sm:text-sm text-slate-400">
+            Esta arena ainda não recebeu avaliações. Agende uma partida e seja o primeiro a avaliar!
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {arena.reviews.map((rev, idx) => (
+              <div
+                key={rev._id || idx}
+                className="glass-card rounded-2xl p-5 border border-white/10 space-y-3"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2.5">
+                    {rev.userAvatar ? (
+                      <img
+                        src={rev.userAvatar}
+                        alt={rev.userName}
+                        className="w-9 h-9 rounded-full object-cover border border-neon"
+                      />
+                    ) : (
+                      <div className="w-9 h-9 rounded-full bg-dark-950 border border-neon flex items-center justify-center font-display font-black text-xs text-neon">
+                        {(rev.userName || 'AT')
+                          .split(' ')
+                          .slice(0, 2)
+                          .map((n) => n[0])
+                          .join('')
+                          .toUpperCase()}
+                      </div>
+                    )}
+                    <div>
+                      <p className="text-xs font-bold text-white">{rev.userName}</p>
+                      <span className="text-[10px] text-amber-400 font-semibold">
+                        {rev.tierLabel || `${rev.stars} Estrelas`}
+                      </span>
+                    </div>
+                  </div>
+                  <FiveStarsDisplay rating={rev.stars} />
+                </div>
+                {rev.comment && (
+                  <p className="text-xs text-slate-300 leading-relaxed">"{rev.comment}"</p>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

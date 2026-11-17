@@ -37,7 +37,13 @@ export default function ProfileTab() {
 
   const [nickname, setNickname] = useState(user?.nickname || '');
   const [selectedAvatar, setSelectedAvatar] = useState(user?.avatar || '');
-  const [activeThemeIndex, setActiveThemeIndex] = useState(isPro ? 2 : 0);
+  const [activeThemeIndex, setActiveThemeIndex] = useState(() => {
+    if (user?.cardThemeId) {
+      const idx = CARD_THEMES.findIndex((t) => t.id === user.cardThemeId);
+      if (idx >= 0) return idx;
+    }
+    return isPro ? 3 : 0;
+  });
   const [customTag, setCustomTag] = useState(user?.customTag || STANDARD_TAGS[0]);
   const [positionRole, setPositionRole] = useState(
     user?.positionRole || 'Atleta Sport Maker'
@@ -62,11 +68,13 @@ export default function ProfileTab() {
     e.preventDefault();
     setSaving(true);
     try {
+      const chosenTheme = CARD_THEMES[activeThemeIndex] || CARD_THEMES[0];
       await updateUserProfile({
         nickname: nickname.trim(),
         avatar: selectedAvatar,
         positionRole,
         customTag,
+        cardThemeId: chosenTheme.id,
       });
       setSavedBanner(true);
       setTimeout(() => setSavedBanner(false), 3000);
@@ -256,26 +264,74 @@ export default function ProfileTab() {
             </div>
           </div>
 
-          {/* 3. Card Skin Selector */}
-          <div>
-            <label className="block text-xs font-bold text-slate-300 mb-2 flex items-center gap-1.5">
-              <SlidersHorizontal className="w-3.5 h-3.5 text-neon" /> 4. Tema Visual do Card:
-            </label>
-            <div className="grid grid-cols-3 gap-2.5">
-              {CARD_THEMES.map((theme, idx) => (
-                <button
-                  key={theme.id}
-                  type="button"
-                  onClick={() => setActiveThemeIndex(idx)}
-                  className={`py-2.5 px-3 rounded-xl text-xs font-bold border transition-all ${
-                    activeThemeIndex === idx
-                      ? `${theme.accentBg} border-transparent`
-                      : 'bg-dark-950 text-slate-300 border-white/10 hover:border-white/30'
-                  }`}
-                >
-                  {theme.name}
-                </button>
-              ))}
+          {/* 3. Card Skin Selector (Standard + Exclusive Animated EA FC PRO Cards) */}
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xs font-bold text-slate-300 mb-2 flex items-center gap-1.5">
+                <SlidersHorizontal className="w-3.5 h-3.5 text-neon" /> 4. Cartinhas Básicas (Estilo EA Sports FC):
+              </label>
+              <div className="grid grid-cols-3 gap-2.5">
+                {CARD_THEMES.map((theme, idx) => {
+                  if (theme.isPremium) return null;
+                  return (
+                    <button
+                      key={theme.id}
+                      type="button"
+                      onClick={() => setActiveThemeIndex(idx)}
+                      className={`py-2.5 px-3 rounded-xl text-xs font-bold border transition-all ${
+                        activeThemeIndex === idx
+                          ? `${theme.accentBg} border-transparent`
+                          : 'bg-dark-950 text-slate-300 border-white/10 hover:border-white/30'
+                      }`}
+                    >
+                      {theme.name}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-500/10 via-dark-950 to-dark-950 border border-amber-400/30 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-black uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
+                  <Crown className="w-3.5 h-3.5" /> Cartinhas Animadas Exclusivas PRO (Ouro, Raio ⚡ & Fogo 🔥):
+                </span>
+                {!isPro && (
+                  <span className="text-[10px] font-bold text-amber-300">
+                    Requer Sport Maker PRO
+                  </span>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                {CARD_THEMES.map((theme, idx) => {
+                  if (!theme.isPremium) return null;
+                  const isSelected = activeThemeIndex === idx;
+                  return (
+                    <button
+                      key={theme.id}
+                      type="button"
+                      onClick={() => {
+                        if (!isPro) {
+                          navigate('/app/seja-pro');
+                          return;
+                        }
+                        setActiveThemeIndex(idx);
+                      }}
+                      className={`py-3 px-3 rounded-xl text-xs font-display font-extrabold border transition-all flex items-center justify-center gap-1.5 ${
+                        isSelected
+                          ? `${theme.accentBg} border-transparent scale-[1.02] shadow-lg`
+                          : isPro
+                            ? 'bg-dark-900/90 text-amber-200 border-amber-400/40 hover:border-amber-300'
+                            : 'bg-dark-950/70 text-slate-400 border-white/10 hover:border-amber-400/40'
+                      }`}
+                    >
+                      {!isPro && <Lock className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
+                      <span className="truncate">{theme.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
 

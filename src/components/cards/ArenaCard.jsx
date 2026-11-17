@@ -30,7 +30,10 @@ export default function ArenaCard({ arena, chosenSlot, onSelectSlot, onBook, onV
               <Navigation className="w-3.5 h-3.5 fill-neon" /> {arena.distance} • {arena.neighborhood}
             </span>
             <span className="px-2.5 py-1 rounded-full bg-dark-950/85 backdrop-blur-md border border-white/15 text-xs font-bold text-amber-400 flex items-center gap-1">
-              <Star className="w-3.5 h-3.5 fill-amber-400" /> {arena.rating} ({arena.reviewsCount})
+              <Star className="w-3.5 h-3.5 fill-amber-400" />{' '}
+              {(arena.reviewsCount || 0) > 0
+                ? `${Number(arena.rating || 0).toFixed(1)} (${arena.reviewsCount})`
+                : 'Nova (0)'}
             </span>
           </div>
 

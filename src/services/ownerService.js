@@ -112,17 +112,31 @@ export const ownerService = {
   },
 
   /**
-   * Busca a lista de amigos reais do atleta logado + sugestões de outros usuários do banco
+   * Busca a lista de amigos reais, solicitações pendentes (recebidas/enviadas) e sugestões de outros usuários do banco
    */
   async getFriendsData() {
     const response = await fetch(`${MONGO_CONFIG.restApiUrl}/friends`, {
       method: 'GET',
       headers: getAuthHeaders(),
     });
-    const data = await response.json().catch(() => ({ friends: [], suggestions: [] }));
-    if (!response.ok) return { friends: [], suggestions: [] };
+    const data = await response.json().catch(() => ({
+      friends: [],
+      receivedRequests: [],
+      sentRequests: [],
+      suggestions: [],
+    }));
+    if (!response.ok) {
+      return {
+        friends: [],
+        receivedRequests: [],
+        sentRequests: [],
+        suggestions: [],
+      };
+    }
     return {
       friends: data.friends || [],
+      receivedRequests: data.receivedRequests || [],
+      sentRequests: data.sentRequests || [],
       suggestions: data.suggestions || [],
     };
   },
@@ -146,7 +160,7 @@ export const ownerService = {
   },
 
   /**
-   * Adiciona um usuário real como amigo no MongoDB
+   * Envia uma solicitação de amizade para outro usuário no MongoDB
    */
   async addFriend(targetUserId) {
     const response = await fetch(`${MONGO_CONFIG.restApiUrl}/friends/${targetUserId}`, {
@@ -155,9 +169,41 @@ export const ownerService = {
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      throw new Error(data.message || 'Erro ao adicionar amigo.');
+      throw new Error(data.message || 'Erro ao enviar solicitação de amizade.');
+    }
+    return data;
+  },
+
+  /**
+   * Aceita uma solicitação de amizade recebida no MongoDB
+   */
+  async acceptFriendRequest(targetUserId) {
+    const response = await fetch(
+      `${MONGO_CONFIG.restApiUrl}/friends/${targetUserId}/accept`,
+      {
+        method: 'POST',
+        headers: getAuthHeaders(),
+      }
+    );
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data.message || 'Erro ao aceitar solicitação de amizade.');
     }
     return data.friend;
+  },
+
+  /**
+   * Recusa uma solicitação de amizade recebida (ou cancela uma enviada) no MongoDB
+   */
+  async rejectFriendRequest(targetUserId) {
+    const response = await fetch(
+      `${MONGO_CONFIG.restApiUrl}/friends/${targetUserId}/reject`,
+      {
+        method: 'POST',
+        headers: getAuthHeaders(),
+      }
+    );
+    return response.ok;
   },
 
   /**

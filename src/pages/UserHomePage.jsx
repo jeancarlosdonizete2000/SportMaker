@@ -351,6 +351,22 @@ export default function UserHomePage({
           : m
       )
     );
+
+    if (evalSummary?.updatedArena) {
+      const ua = evalSummary.updatedArena;
+      setDbArenas((prev) =>
+        prev.map((a) =>
+          String(a._id) === String(ua._id) || a.name === ua.name
+            ? {
+                ...a,
+                rating: ua.rating,
+                reviewsCount: ua.reviewsCount,
+                reviews: ua.reviews || a.reviews,
+              }
+            : a
+        )
+      );
+    }
   };
 
   const handleLogout = () => {

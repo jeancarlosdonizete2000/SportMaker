@@ -201,6 +201,7 @@ export default function MatchEvaluationPage({ myMatches = [], onEvaluationComple
         },
         body: JSON.stringify({
           matchId: match?.id,
+          arenaId: match?.arenaId,
           arenaName: match?.arena,
           arenaStars,
           arenaTierLabel: selectedTier.title,
@@ -216,6 +217,8 @@ export default function MatchEvaluationPage({ myMatches = [], onEvaluationComple
           arenaStars,
           arenaTierLabel: selectedTier.title,
           mvpPlayerId,
+          updatedArena: data.updatedArena,
+          updatedUser: data.updatedUser,
         });
       }
 

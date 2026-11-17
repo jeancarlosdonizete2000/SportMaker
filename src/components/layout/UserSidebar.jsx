@@ -116,6 +116,16 @@ export default function UserSidebar({
                         {myMatchesCount}
                       </span>
                     )}
+
+                    {tab.id === 'friends' && (user?.friendRequestsReceived?.length || 0) > 0 && (
+                      <span
+                        className={`text-[11px] px-2 py-0.5 rounded-full font-black ${
+                          isActive ? 'bg-dark-950/20 text-dark-950' : 'bg-amber-400 text-dark-950'
+                        }`}
+                      >
+                        {user.friendRequestsReceived.length}
+                      </span>
+                    )}
                   </>
                 )}
               </NavLink>

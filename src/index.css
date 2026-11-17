@@ -47,3 +47,97 @@
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+/* ============================================================================
+   EA SPORTS FC ULTIMATE TEAM CARD SHIELD & PREMIUM ANIMATIONS (GOLD, LIGHTNING, FIRE)
+   ============================================================================ */
+.fc-card-shield {
+  clip-path: polygon(
+    10% 0%,
+    90% 0%,
+    100% 7%,
+    100% 84%,
+    50% 100%,
+    0% 84%,
+    0% 7%
+  );
+}
+
+@keyframes fcGoldShimmer {
+  0% {
+    transform: translateX(-140%) skewX(-22deg);
+  }
+  50%, 100% {
+    transform: translateX(220%) skewX(-22deg);
+  }
+}
+
+@keyframes fcLightningFlash {
+  0%, 88%, 100% {
+    opacity: 0.12;
+    filter: drop-shadow(0 0 4px #22d3ee);
+  }
+  90% {
+    opacity: 0.95;
+    filter: drop-shadow(0 0 18px #67e8f9) brightness(1.5);
+  }
+  93% {
+    opacity: 0.25;
+  }
+  96% {
+    opacity: 1;
+    filter: drop-shadow(0 0 25px #38bdf8) brightness(1.8);
+  }
+}
+
+@keyframes fcElectricPulse {
+  0%, 100% {
+    box-shadow: inset 0 0 22px rgba(34, 211, 238, 0.25), 0 0 28px rgba(34, 211, 238, 0.45);
+  }
+  50% {
+    box-shadow: inset 0 0 42px rgba(56, 189, 248, 0.55), 0 0 50px rgba(34, 211, 238, 0.85);
+  }
+}
+
+@keyframes fcFireRise {
+  0% {
+    transform: translateY(20%) scale(0.9);
+    opacity: 0;
+  }
+  40% {
+    opacity: 0.85;
+  }
+  100% {
+    transform: translateY(-110%) scale(1.18);
+    opacity: 0;
+  }
+}
+
+@keyframes fcFireGlow {
+  0%, 100% {
+    box-shadow: inset 0 -25px 45px rgba(249, 115, 22, 0.35), 0 0 32px rgba(239, 68, 68, 0.55);
+  }
+  50% {
+    box-shadow: inset 0 -40px 65px rgba(251, 191, 36, 0.6), 0 0 52px rgba(249, 115, 22, 0.9);
+  }
+}
+
+.fc-shimmer-sweep {
+  animation: fcGoldShimmer 3.8s infinite ease-in-out;
+}
+
+.fc-lightning-svg {
+  animation: fcLightningFlash 2.6s infinite;
+}
+
+.fc-electric-card {
+  animation: fcElectricPulse 2.4s infinite ease-in-out;
+}
+
+.fc-fire-card {
+  animation: fcFireGlow 2.2s infinite ease-in-out;
+}
+
+.fc-ember {
+  animation: fcFireRise 2.4s infinite ease-out;
+}
