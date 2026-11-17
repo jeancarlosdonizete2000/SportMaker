@@ -8,7 +8,8 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '5mb' }));
 
-// Garante conexão com o MongoDB em ambientes Serverless (Vercel)
+// Garante conexão com o MongoDB em ambientes Serverless (Vercel) e força o banco oficial `sport_maker_db`
+const MONGODB_DB_NAME = process.env.MONGODB_DB_NAME || 'sport_maker_db';
 let isConnected = false;
 async function connectDB() {
   if (isConnected || mongoose.connection.readyState === 1) {
@@ -16,6 +17,7 @@ async function connectDB() {
     return;
   }
   await mongoose.connect(MONGODB_URI, {
+    dbName: MONGODB_DB_NAME,
     serverSelectionTimeoutMS: 10000,
   });
   isConnected = true;
@@ -1395,7 +1397,9 @@ app.post('/api/evaluations', async (req, res) => {
 export async function startServer() {
   try {
     await connectDB();
-    console.log('✅ Conectado ao MongoDB Atlas: footplus.yliizzy.mongodb.net/sport_maker_db');
+    console.log(
+      `✅ Conectado ao MongoDB Atlas: footplus.yliizzy.mongodb.net/${mongoose.connection.name}`
+    );
 
     app.listen(PORT, () => {
       console.log(`🚀 Servidor Auth + MongoDB rodando em http://localhost:${PORT}/api`);
