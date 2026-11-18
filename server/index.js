@@ -9,18 +9,40 @@ app.use(cors());
 app.use(express.json({ limit: '5mb' }));
 
 // Garante conexão com o MongoDB em ambientes Serverless (Vercel) e força o banco oficial `sport_maker_db`
-const MONGODB_DB_NAME = process.env.MONGODB_DB_NAME || 'sport_maker_db';
-let isConnected = false;
+const MONGODB_DB_NAME = (process.env.MONGODB_DB_NAME || 'sport_maker_db').trim();
+const PORT = process.env.PORT || 5000;
+const EXPECTED_API_KEY = (
+  process.env.MONGODB_API_KEY ||
+  process.env.VITE_MONGODB_API_KEY ||
+  ''
+).trim();
+
+const rawMongoUri = (process.env.MONGODB_URI || '')
+  .trim()
+  .replace(/^['"]|['"]$/g, '');
+const MONGODB_URI = rawMongoUri.replace(/:<([^>]+)>@/, ':$1@');
+
+let connectionPromise = null;
 async function connectDB() {
-  if (isConnected || mongoose.connection.readyState === 1) {
-    isConnected = true;
-    return;
+  if (mongoose.connection.readyState === 1) {
+    return mongoose.connection;
   }
-  await mongoose.connect(MONGODB_URI, {
-    dbName: MONGODB_DB_NAME,
-    serverSelectionTimeoutMS: 10000,
-  });
-  isConnected = true;
+  if (!MONGODB_URI) {
+    throw new Error('Variável de ambiente MONGODB_URI não está configurada.');
+  }
+  if (connectionPromise && mongoose.connection.readyState === 2) {
+    return connectionPromise;
+  }
+  connectionPromise = mongoose
+    .connect(MONGODB_URI, {
+      dbName: MONGODB_DB_NAME,
+      serverSelectionTimeoutMS: 10000,
+    })
+    .catch((err) => {
+      connectionPromise = null;
+      throw err;
+    });
+  return connectionPromise;
 }
 
 app.use(async (req, res, next) => {
@@ -29,19 +51,12 @@ app.use(async (req, res, next) => {
     next();
   } catch (err) {
     console.error('❌ Erro ao conectar no MongoDB Atlas:', err.message);
-    res.status(500).json({ message: 'Erro de conexão com o banco de dados.' });
+    res.status(500).json({
+      ok: false,
+      message: `Não foi possível conectar ao servidor do MongoDB: ${err.message}`,
+    });
   }
 });
-
-const PORT = process.env.PORT || 5000;
-const EXPECTED_API_KEY = process.env.MONGODB_API_KEY || process.env.VITE_MONGODB_API_KEY;
-
-const rawMongoUri = process.env.MONGODB_URI;
-if (!rawMongoUri) {
-  console.error('❌ Erro: MONGODB_URI não definida nas variáveis de ambiente.');
-  process.exit(1);
-}
-const MONGODB_URI = rawMongoUri.replace(/:<([^>]+)>@/, ':$1@');
 
 // Schema Mongoose para Atletas e Proprietários de Arena com `passwordHash` criptografado e Assinatura PRO
 const UserSchema = new mongoose.Schema(
