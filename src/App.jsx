@@ -15,6 +15,7 @@ const LoginPage = lazy(() => import('./pages/LoginPage'));
 const UserHomePage = lazy(() => import('./pages/UserHomePage'));
 const OwnerHomePage = lazy(() => import('./pages/OwnerHomePage'));
 const ArenaDetailsPage = lazy(() => import('./pages/ArenaDetailsPage'));
+const PlayerProfilePage = lazy(() => import('./pages/PlayerProfilePage'));
 const TermsOfServiceModal = lazy(() => import('./components/modals/TermsOfServiceModal'));
 
 function PageLoader() {
@@ -226,6 +227,9 @@ function AppRoutes() {
 
       {/* Rotas Protegidas da Home do Proprietário de Arena */}
       <Route path="/proprietario/*" element={<ProtectedOwnerRoute />} />
+
+      {/* Perfil público do Jogador + PlayerCard */}
+      <Route path="/jogador/:userId" element={<PlayerProfilePage />} />
 
       {/* Fallback */}
       <Route path="*" element={<Navigate to="/" replace />} />

@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Trophy,
   SlidersHorizontal,
@@ -38,30 +38,86 @@ export default function ProfileTab() {
   const [nickname, setNickname] = useState(user?.nickname || '');
   const [selectedAvatar, setSelectedAvatar] = useState(user?.avatar || '');
   const [activeThemeIndex, setActiveThemeIndex] = useState(() => {
-    if (user?.cardThemeId) {
-      const idx = CARD_THEMES.findIndex((t) => t.id === user.cardThemeId);
+    const legacyMap = {
+      'gold-toty': 'card-ouro-pro',
+      'thunder-pro': 'card-future-stars-pro',
+      'inferno-pro': 'card-fut-red-pro',
+    };
+    const targetId = legacyMap[user?.cardThemeId] || user?.cardThemeId;
+    if (targetId) {
+      const idx = CARD_THEMES.findIndex((t) => t.id === targetId);
       if (idx >= 0) return idx;
     }
     return isPro ? 3 : 0;
   });
+
+  useEffect(() => {
+    if (!user?.cardThemeId) return;
+    const legacyMap = {
+      'gold-toty': 'card-ouro-pro',
+      'thunder-pro': 'card-future-stars-pro',
+      'inferno-pro': 'card-fut-red-pro',
+    };
+    const targetId = legacyMap[user.cardThemeId] || user.cardThemeId;
+    const idx = CARD_THEMES.findIndex((t) => t.id === targetId);
+    if (idx >= 0) {
+      setActiveThemeIndex(idx);
+    }
+  }, [user?.cardThemeId]);
   const [customTag, setCustomTag] = useState(user?.customTag || STANDARD_TAGS[0]);
   const [positionRole, setPositionRole] = useState(
     user?.positionRole || 'Atleta Sport Maker'
   );
   const [saving, setSaving] = useState(false);
+  const [removingBg, setRemovingBg] = useState(false);
   const [savedBanner, setSavedBanner] = useState(false);
 
-  const handleFileUpload = (e) => {
+  const compressImageBlobToDataUrl = (blobOrFile) =>
+    new Promise((resolve) => {
+      const url = URL.createObjectURL(blobOrFile);
+      const img = new Image();
+      img.onload = () => {
+        const maxW = 480;
+        const maxH = 600;
+        let { width, height } = img;
+        if (width > maxW || height > maxH) {
+          const ratio = Math.min(maxW / width, maxH / height);
+          width = Math.round(width * ratio);
+          height = Math.round(height * ratio);
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        URL.revokeObjectURL(url);
+        resolve(canvas.toDataURL('image/webp', 0.86));
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        const reader = new FileReader();
+        reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '');
+        reader.readAsDataURL(blobOrFile);
+      };
+      img.src = url;
+    });
+
+  const handleFileUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        setSelectedAvatar(reader.result);
-      }
-    };
-    reader.readAsDataURL(file);
+    setRemovingBg(true);
+    try {
+      const { removeBackground } = await import('@imgly/background-removal');
+      const resultBlob = await removeBackground(file);
+      const compressed = await compressImageBlobToDataUrl(resultBlob);
+      if (compressed) setSelectedAvatar(compressed);
+    } catch {
+      const compressed = await compressImageBlobToDataUrl(file);
+      if (compressed) setSelectedAvatar(compressed);
+    } finally {
+      setRemovingBg(false);
+    }
   };
 
   const handleSaveProfile = async (e) => {
@@ -212,11 +268,12 @@ export default function ProfileTab() {
                   />
                   <button
                     type="button"
+                    disabled={removingBg}
                     onClick={() => fileInputRef.current?.click()}
-                    className="px-3.5 py-2 rounded-xl bg-neon hover:bg-neon-400 text-dark-950 font-display font-extrabold text-xs flex items-center gap-1.5"
+                    className="px-3.5 py-2 rounded-xl bg-neon hover:bg-neon-400 disabled:opacity-60 text-dark-950 font-display font-extrabold text-xs flex items-center gap-1.5"
                   >
                     <Upload className="w-3.5 h-3.5" />
-                    Enviar Minha Foto do Dispositivo
+                    {removingBg ? 'Recortando fundo...' : 'Enviar Minha Foto do Dispositivo'}
                   </button>
                   {selectedAvatar && (
                     <button
@@ -255,12 +312,20 @@ export default function ProfileTab() {
               <label className="block text-xs font-bold text-slate-200 mb-1.5">
                 3. Posição & Modalidade Principal:
               </label>
-              <input
-                type="text"
+              <select
                 value={positionRole}
                 onChange={(e) => setPositionRole(e.target.value)}
                 className="w-full bg-dark-950 border border-white/10 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-neon"
-              />
+              >
+                <option value="Atacante • Futebol / Society">Atacante (ATA) • Futebol / Society</option>
+                <option value="Ala / Ponta • Futebol / Futsal">Ala / Ponta (ALA) • Futebol / Futsal</option>
+                <option value="Meia / Armador • Futebol / Society">Meia / Armador (MEI) • Futebol / Society</option>
+                <option value="Zagueiro / Fixo • Futebol / Futsal">Zagueiro / Fixo (ZAG) • Futebol / Futsal</option>
+                <option value="Goleiro • Futebol / Society">Goleiro (GOL) • Futebol / Society</option>
+                <option value="Beach Tennis">Beach Tennis (BT)</option>
+                <option value="Padel / Tênis">Padel / Tênis (PDL)</option>
+                <option value="Futevôlei">Futevôlei (FTV)</option>
+              </select>
             </div>
           </div>
 
@@ -277,7 +342,10 @@ export default function ProfileTab() {
                     <button
                       key={theme.id}
                       type="button"
-                      onClick={() => setActiveThemeIndex(idx)}
+                      onClick={() => {
+                        setActiveThemeIndex(idx);
+                        updateUserProfile({ cardThemeId: theme.id });
+                      }}
                       className={`py-2.5 px-3 rounded-xl text-xs font-bold border transition-all ${
                         activeThemeIndex === idx
                           ? `${theme.accentBg} border-transparent`
@@ -317,6 +385,7 @@ export default function ProfileTab() {
                           return;
                         }
                         setActiveThemeIndex(idx);
+                        updateUserProfile({ cardThemeId: theme.id });
                       }}
                       className={`py-3 px-3 rounded-xl text-xs font-display font-extrabold border transition-all flex items-center justify-center gap-1.5 ${
                         isSelected
@@ -409,6 +478,7 @@ export default function ProfileTab() {
           player={basePlayer}
           theme={currentTheme}
           customTag={customTag}
+          enableDownload
         />
       </div>
     </div>

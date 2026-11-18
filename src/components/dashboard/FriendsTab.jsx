@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Users,
   UserPlus,
@@ -15,7 +16,13 @@ import {
 import { ownerService } from '../../services/ownerService';
 
 export default function FriendsTab() {
+  const navigate = useNavigate();
   const [friends, setFriends] = useState([]);
+
+  const openPlayerProfile = (person) => {
+    if (!person?.id) return;
+    navigate(`/jogador/${person.id}`, { state: { player: person } });
+  };
   const [receivedRequests, setReceivedRequests] = useState([]);
   const [sentRequests, setSentRequests] = useState([]);
   const [suggestions, setSuggestions] = useState([]);
@@ -278,7 +285,13 @@ export default function FriendsTab() {
                   {renderAvatar(person, 'w-12 h-12', 'rounded-full')}
                   <div>
                     <p className="text-sm font-bold text-white flex items-center gap-2">
-                      {person.name}
+                      <button
+                        type="button"
+                        onClick={() => openPlayerProfile(person)}
+                        className="hover:text-neon transition text-left"
+                      >
+                        {person.name}
+                      </button>
                       {person.nickname && (
                         <span className="text-xs text-neon">"{person.nickname}"</span>
                       )}
@@ -351,7 +364,13 @@ export default function FriendsTab() {
                         {renderAvatar(person, 'w-12 h-12', 'rounded-full')}
                         <div>
                           <p className="text-sm font-bold text-white flex items-center gap-2">
-                            {person.name}
+                            <button
+                        type="button"
+                        onClick={() => openPlayerProfile(person)}
+                        className="hover:text-neon transition text-left"
+                      >
+                        {person.name}
+                      </button>
                             {person.nickname && (
                               <span className="text-xs text-neon">"{person.nickname}"</span>
                             )}
@@ -479,7 +498,13 @@ export default function FriendsTab() {
                   <div>
                     <div className="flex items-center gap-2">
                       <h3 className="font-display font-bold text-base text-white">
-                        {friend.name}
+                        <button
+                          type="button"
+                          onClick={() => openPlayerProfile(friend)}
+                          className="hover:text-neon transition text-left"
+                        >
+                          {friend.name}
+                        </button>
                       </h3>
                       <span className="text-[10px] font-black px-2 py-0.5 rounded bg-neon/15 text-neon">
                         {friend.ovr > 0 ? `OVR ${friend.ovr}` : 'Sem OVR'}
@@ -545,7 +570,13 @@ export default function FriendsTab() {
                   {renderAvatar(person, 'w-12 h-12', 'rounded-full')}
                   <div>
                     <p className="text-sm font-bold text-white flex items-center gap-2">
-                      {person.name}
+                      <button
+                        type="button"
+                        onClick={() => openPlayerProfile(person)}
+                        className="hover:text-neon transition text-left"
+                      >
+                        {person.name}
+                      </button>
                       <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/10 text-neon">
                         {person.ovr > 0 ? `OVR ${person.ovr}` : 'Sem OVR'}
                       </span>

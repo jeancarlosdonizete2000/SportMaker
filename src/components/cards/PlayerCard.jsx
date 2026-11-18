@@ -1,5 +1,6 @@
-import React from 'react';
-import { Award, User, Zap, Flame, Crown } from 'lucide-react';
+import React, { useRef, useState } from 'react';
+import { Award, User, Zap, Flame, Crown, Download } from 'lucide-react';
+import { toPng } from 'html-to-image';
 
 function extractShortPosition(role = '') {
   const r = role.toLowerCase();
@@ -13,7 +14,27 @@ function extractShortPosition(role = '') {
   return 'ATA';
 }
 
-export default function PlayerCard({ player, theme, customTag }) {
+export default function PlayerCard({ player, theme, customTag, enableDownload = false }) {
+  const cardRef = useRef(null);
+  const [isExporting, setIsExporting] = useState(false);
+
+  const handleDownload = async () => {
+    if (!cardRef.current || isExporting) return;
+    setIsExporting(true);
+    try {
+      const dataUrl = await toPng(cardRef.current, {
+        cacheBust: true,
+        pixelRatio: 2,
+      });
+      const link = document.createElement('a');
+      const safeName = (player.name || 'player-card').toLowerCase().replace(/\s+/g, '-');
+      link.download = `${safeName}-card.png`;
+      link.href = dataUrl;
+      link.click();
+    } finally {
+      setIsExporting(false);
+    }
+  };
   const stats = player.stats || {
     ritmo: 0,
     finalizacao: 0,
@@ -49,40 +70,67 @@ export default function PlayerCard({ player, theme, customTag }) {
   ];
 
   return (
-    <div className="relative w-full max-w-[350px] mx-auto select-none group">
-      {/* Aura Externa Animada para Cards PRO (Ouro, Raio ou Fogo) */}
-      {isLightning && (
-        <div className="absolute -inset-2 rounded-[42px] bg-gradient-to-b from-cyan-400/40 via-blue-500/25 to-sky-400/40 blur-xl animate-pulse pointer-events-none" />
-      )}
-      {isFire && (
-        <div className="absolute -inset-2 rounded-[42px] bg-gradient-to-t from-red-600/50 via-orange-500/35 to-amber-400/35 blur-xl animate-pulse pointer-events-none" />
-      )}
-      {isGold && (
-        <div className="absolute -inset-2 rounded-[42px] bg-gradient-to-b from-amber-300/45 via-yellow-500/25 to-amber-400/45 blur-xl pointer-events-none" />
+    <div
+      className={`relative w-full mx-auto select-none group ${
+        theme.bgImage ? 'max-w-[400px]' : 'max-w-[360px]'
+      }`}
+    >
+      {/* Aura de raio exclusiva do card Future Stars Neon PRO */}
+      {theme.id === 'card-future-stars-pro' && (
+        <div
+          className="absolute -inset-3 rounded-[40px] bg-gradient-to-b from-fuchsia-500/45 via-purple-600/30 to-cyan-400/45 blur-2xl animate-pulse pointer-events-none"
+          style={{
+            WebkitMaskImage:
+              'linear-gradient(to bottom, transparent 0%, black 18%, black 85%, transparent 100%)',
+            maskImage:
+              'linear-gradient(to bottom, transparent 0%, black 18%, black 85%, transparent 100%)',
+          }}
+        />
       )}
 
       {/* Moldura Externa em Formato de Escudo EA Sports FC (Ultimate Team) */}
       <div
-        className={`fc-card-shield p-[3px] transition-all duration-500 ${
-          isGold
-            ? 'bg-gradient-to-b from-amber-200 via-yellow-500 to-amber-700'
-            : isLightning
-              ? 'bg-gradient-to-b from-cyan-200 via-sky-400 to-blue-700 fc-electric-card'
-              : isFire
-                ? 'bg-gradient-to-b from-amber-300 via-orange-500 to-red-700 fc-fire-card'
-                : theme.id === 'emerald-pro'
-                  ? 'bg-gradient-to-b from-emerald-300 via-emerald-500 to-teal-900'
-                  : theme.id === 'silver-slate'
-                    ? 'bg-gradient-to-b from-slate-200 via-slate-400 to-slate-800'
-                    : 'bg-gradient-to-b from-neon via-lime-500 to-emerald-900'
-        } ${theme.glow}`}
+        ref={cardRef}
+        className={
+          theme.bgImage
+            ? 'relative transition-all duration-500'
+            : `fc-card-shield p-[3px] transition-all duration-500 ${isGold
+              ? 'bg-gradient-to-b from-amber-200 via-yellow-500 to-amber-700'
+              : isLightning
+                ? 'bg-gradient-to-b from-cyan-200 via-sky-400 to-blue-700 fc-electric-card'
+                : isFire
+                  ? 'bg-gradient-to-b from-amber-300 via-orange-500 to-red-700 fc-fire-card'
+                  : theme.id === 'emerald-pro'
+                    ? 'bg-gradient-to-b from-emerald-300 via-emerald-500 to-teal-900'
+                    : theme.id === 'silver-slate'
+                      ? 'bg-gradient-to-b from-slate-200 via-slate-400 to-slate-800'
+                      : 'bg-gradient-to-b from-neon via-lime-500 to-emerald-900'
+            } ${theme.glow}`
+        }
       >
         {/* Interior do Escudo EA FC */}
         <div
-          className={`fc-card-shield relative overflow-hidden bg-gradient-to-b ${theme.gradient} pt-6 pb-11 px-6 text-white`}
+          className={
+            theme.bgImage
+              ? 'relative overflow-hidden text-white pt-10 pb-16 px-9 min-h-[540px] flex flex-col justify-between'
+              : `fc-card-shield relative overflow-hidden bg-gradient-to-b ${theme.gradient} pt-6 pb-11 px-6 text-white`
+          }
+          style={
+            theme.bgImage
+              ? {
+                backgroundImage: `url(${theme.bgImage})`,
+                backgroundSize: '100% 100%',
+                backgroundPosition: 'center',
+                backgroundRepeat: 'no-repeat',
+              }
+              : undefined
+          }
         >
-          {/* Textura Geométrica Interna Estilo FUT */}
-          <div className="absolute inset-0 bg-grid-pattern opacity-35 pointer-events-none" />
+          {/* Textura Geométrica Interna Estilo FUT (apenas nos cards sem imagem) */}
+          {!theme.bgImage && (
+            <div className="absolute inset-0 bg-grid-pattern opacity-35 pointer-events-none" />
+          )}
+
 
           {/* Efeito 1: Brilho Holográfico Dourado (Ouro Imperial PRO) */}
           {isGold && (
@@ -142,24 +190,6 @@ export default function PlayerCard({ player, theme, customTag }) {
             </>
           )}
 
-          {/* Selo de Edição no Topo do Card */}
-          <div className="relative z-10 flex items-center justify-between mb-3">
-            <span
-              className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest ${theme.accentBg}`}
-            >
-              {isLightning && <Zap className="w-3 h-3 fill-current" />}
-              {isFire && <Flame className="w-3 h-3 fill-current" />}
-              {isGold && <Crown className="w-3 h-3 fill-current" />}
-              {theme.badgeLabel || (player.isPro ? '👑 PRO VIP' : 'SPORT MAKER FC')}
-            </span>
-
-            {customTag && (
-              <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-black/45 border border-white/15 text-slate-100 truncate max-w-[155px]">
-                {customTag}
-              </span>
-            )}
-          </div>
-
           {/* UPPER SECTION EA FC: Coluna Esquerda (OVR + Posição + Bandeira/Clube) + Retrato à Direita */}
           <div className="relative z-10 grid grid-cols-12 items-center gap-2 pt-1 pb-3">
             {/* Coluna Esquerda Estilo FUT */}
@@ -176,13 +206,13 @@ export default function PlayerCard({ player, theme, customTag }) {
               <div className="w-8 h-[1px] bg-white/20 my-0.5" />
 
               {/* Bandeira Brasil + Emblema Sport Maker */}
-              <div className="flex flex-col items-center gap-1">
-                <span
-                  className="text-[10px] font-black px-2 py-0.5 rounded bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 tracking-wider"
-                  title="Brasil"
-                >
-                  🇧🇷 BRA
-                </span>
+              <div className="flex flex-col items-center gap-1.5">
+                <img
+                  src="/flags/br.png"
+                  alt="Brasil"
+                  crossOrigin="anonymous"
+                  className="w-9 h-6 rounded-[4px] object-cover shadow-md border border-white/25"
+                />
                 <div
                   className={`w-7 h-7 rounded-lg flex items-center justify-center font-display font-black text-[10px] shadow-md ${theme.accentBg}`}
                 >
@@ -198,27 +228,40 @@ export default function PlayerCard({ player, theme, customTag }) {
                   <img
                     src={player.avatar}
                     alt={player.name}
-                    className={`w-28 h-28 sm:w-32 sm:h-32 rounded-2xl object-cover border-2 shadow-2xl ${
-                      isGold
-                        ? 'border-amber-300'
-                        : isLightning
-                          ? 'border-cyan-300'
-                          : isFire
-                            ? 'border-orange-400'
-                            : 'border-white/25'
-                    }`}
+                    crossOrigin="anonymous"
+                    className={
+                      theme.bgImage
+                        ? 'w-40 h-44 sm:w-44 sm:h-48 object-cover object-top drop-shadow-[0_10px_18px_rgba(0,0,0,0.65)]'
+                        : `w-32 h-32 sm:w-36 sm:h-36 rounded-2xl object-cover object-top border-2 shadow-2xl ${isGold
+                          ? 'border-amber-300'
+                          : isLightning
+                            ? 'border-cyan-300'
+                            : isFire
+                              ? 'border-orange-400'
+                              : 'border-white/25'
+                        }`
+                    }
+                    style={
+                      theme.bgImage
+                        ? {
+                          WebkitMaskImage:
+                            'linear-gradient(to bottom, black 70%, transparent 100%)',
+                          maskImage:
+                            'linear-gradient(to bottom, black 70%, transparent 100%)',
+                        }
+                        : undefined
+                    }
                   />
                 ) : (
                   <div
-                    className={`w-28 h-28 sm:w-32 sm:h-32 rounded-2xl bg-dark-950/90 border-2 flex flex-col items-center justify-center shadow-2xl ${
-                      isGold
-                        ? 'border-amber-300 text-amber-300'
-                        : isLightning
-                          ? 'border-cyan-300 text-cyan-300'
-                          : isFire
-                            ? 'border-orange-400 text-orange-400'
-                            : 'border-white/25 text-neon'
-                    }`}
+                    className={`w-28 h-28 sm:w-32 sm:h-32 rounded-2xl bg-dark-950/90 border-2 flex flex-col items-center justify-center shadow-2xl ${isGold
+                      ? 'border-amber-300 text-amber-300'
+                      : isLightning
+                        ? 'border-cyan-300 text-cyan-300'
+                        : isFire
+                          ? 'border-orange-400 text-orange-400'
+                          : 'border-white/25 text-neon'
+                      }`}
                   >
                     <span className="font-display font-black text-3xl">
                       {player.name ? initials : <User className="w-10 h-10" />}
@@ -233,19 +276,19 @@ export default function PlayerCard({ player, theme, customTag }) {
           </div>
 
           {/* FAIXA CENTRAL DE NOME DO JOGADOR (ESTILO EA SPORTS FC) */}
-          <div className="relative z-10 text-center py-2 border-y border-white/20 bg-black/35 backdrop-blur-sm my-1">
+          <div className="relative z-10 max-w-[88%] mx-auto rounded-lg text-center py-2 border-y border-white/20 bg-black/35 backdrop-blur-sm my-1">
             <h3 className="font-display font-black text-xl sm:text-2xl uppercase tracking-wider text-white truncate px-2 drop-shadow">
               {player.nickname ? player.nickname : player.name}
             </h3>
-            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-300 truncate px-2">
+            <p className="text-[8px] font-bold uppercase tracking-widest text-slate-300 truncate px-2">
               {player.nickname ? `${player.name} • ` : ''}
               {player.role}
             </p>
           </div>
 
           {/* GRADE DE 6 ATRIBUTOS EM 2 COLUNAS (PAC, SHO, PAS | DRI/DEF, PHY, FPL) */}
-          <div className="relative z-10 grid grid-cols-2 gap-4 py-3 px-2 border-b border-white/15">
-            <div className="space-y-1.5 border-r border-white/15 pr-3">
+          <div className="relative z-10 grid grid-cols-2 gap-4 py-1.5 px-2 border-b border-white/15">
+            <div className="space-y-0.5 border-r border-white/15 pr-3">
               {sixAttributesLeft.map((attr) => (
                 <div
                   key={attr.code}
@@ -262,7 +305,7 @@ export default function PlayerCard({ player, theme, customTag }) {
               ))}
             </div>
 
-            <div className="space-y-1.5 pl-1">
+            <div className="space-y-0.5 pl-1">
               {sixAttributesRight.map((attr) => (
                 <div
                   key={attr.code}
@@ -281,7 +324,7 @@ export default function PlayerCard({ player, theme, customTag }) {
           </div>
 
           {/* RODAPÉ DA CARTINHA: JOGOS, MVPs & AMIGOS */}
-          <div className="relative z-10 pt-2.5 flex items-center justify-around text-center text-[11px]">
+          <div className="relative z-10 pt-1.5 flex items-center justify-around text-center text-[11px]">
             <div>
               <span className="text-slate-400 block text-[9px] uppercase font-bold">Jogos</span>
               <span className="font-display font-black text-sm text-white">
@@ -304,22 +347,21 @@ export default function PlayerCard({ player, theme, customTag }) {
             </div>
           </div>
 
-          {/* PlayStyles+ Icons no Bico Inferior do Escudo */}
-          {player.badgesList && player.badgesList.length > 0 && (
-            <div className="relative z-10 pt-2 flex justify-center gap-1 flex-wrap">
-              {player.badgesList.slice(0, 2).map((badge) => (
-                <span
-                  key={badge}
-                  className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-black/50 border border-white/15 text-slate-200 flex items-center gap-1"
-                >
-                  <Award className={`w-2.5 h-2.5 ${theme.accentText}`} />
-                  {badge}
-                </span>
-              ))}
-            </div>
-          )}
+
         </div>
       </div>
+
+      {enableDownload && (
+        <button
+          type="button"
+          onClick={handleDownload}
+          disabled={isExporting}
+          className="mt-4 w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-60 text-slate-950 font-bold py-2.5 px-4 rounded-xl transition shadow-lg"
+        >
+          <Download className="w-4 h-4" />
+          {isExporting ? 'Gerando PNG...' : 'Baixar Carta (PNG)'}
+        </button>
+      )}
     </div>
   );
 }

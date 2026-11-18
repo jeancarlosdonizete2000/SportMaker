@@ -969,11 +969,24 @@ function formatPublicPlayer(u) {
     nickname: u.nickname || '',
     handle: `@${(u.nickname || u.name || 'atleta').toLowerCase().replace(/\s+/g, '')}`,
     sport: u.positionRole || 'Atleta Sport Maker',
+    positionRole: u.positionRole || 'Atleta Sport Maker',
+    customTag: u.customTag || 'Atleta Iniciante',
+    cardThemeId: u.cardThemeId || 'neon-lime',
     ovr: u.ovr ?? 0,
     avatar: u.avatar || '',
     isPro: Boolean(u.isPro && u.proStatus === 'active'),
     matchesCount: u.matchesCount || 0,
+    matches: u.matchesCount || 0,
     mvpCount: u.mvpCount || 0,
+    friendsCount: Array.isArray(u.friends) ? u.friends.length : 0,
+    stats: u.stats || {
+      ritmo: 0,
+      finalizacao: 0,
+      passe: 0,
+      defesa: 0,
+      fisico: 0,
+      fairPlay: 0,
+    },
     status: 'Atleta Cadastrado',
     isOnline: true,
     mutualMatches: 0,
@@ -1075,6 +1088,23 @@ app.get('/api/users/search', async (req, res) => {
     });
   } catch (err) {
     return res.status(500).json({ message: err.message || 'Erro ao pesquisar usuários.' });
+  }
+});
+
+// GET /api/users/:id - Retorna o perfil público completo e o PlayerCard real escolhido pelo usuário
+app.get('/api/users/:id', async (req, res) => {
+  try {
+    const targetId = req.params.id;
+    if (!mongoose.Types.ObjectId.isValid(targetId)) {
+      return res.status(404).json({ message: 'Usuário não encontrado.' });
+    }
+    const targetUser = await User.findById(targetId);
+    if (!targetUser) {
+      return res.status(404).json({ message: 'Usuário não encontrado.' });
+    }
+    return res.json({ user: formatPublicPlayer(targetUser) });
+  } catch (err) {
+    return res.status(500).json({ message: err.message || 'Erro ao buscar perfil do jogador.' });
   }
 });
 
@@ -1585,6 +1615,59 @@ app.post('/api/evaluations', async (req, res) => {
     });
   } catch (err) {
     return res.status(500).json({ message: err.message || 'Erro ao computar avaliação.' });
+  }
+});
+
+// ============================================================================
+// MODELO E ROTAS DE CARTAS PERSONALIZADAS (CARD TEMPLATES) NO MONGODB
+// ============================================================================
+const CardTemplateSchema = new mongoose.Schema(
+  {
+    name: { type: String, required: true, trim: true },
+    category: { type: String, default: 'custom', trim: true },
+    imageUrl: { type: String, required: true },
+    isPro: { type: Boolean, default: false },
+    createdAt: { type: Date, default: Date.now },
+  },
+  { collection: 'card_templates' }
+);
+
+const CardTemplate =
+  mongoose.models.CardTemplate || mongoose.model('CardTemplate', CardTemplateSchema);
+
+app.get('/api/cards', async (req, res) => {
+  try {
+    const cards = await CardTemplate.find().sort({ createdAt: -1 }).lean();
+    return res.json({ ok: true, cards });
+  } catch (err) {
+    return res.status(500).json({ message: err.message || 'Erro ao listar cartas.' });
+  }
+});
+
+app.post('/api/cards', async (req, res) => {
+  try {
+    const { name, category, imageUrl, isPro } = req.body || {};
+    if (!name || !imageUrl) {
+      return res.status(400).json({ message: 'Nome e imageUrl são obrigatórios.' });
+    }
+    const card = await CardTemplate.create({
+      name,
+      category: category || 'custom',
+      imageUrl,
+      isPro: Boolean(isPro),
+    });
+    return res.status(201).json({ ok: true, card });
+  } catch (err) {
+    return res.status(500).json({ message: err.message || 'Erro ao salvar carta.' });
+  }
+});
+
+app.delete('/api/cards/:id', async (req, res) => {
+  try {
+    await CardTemplate.findByIdAndDelete(req.params.id);
+    return res.json({ ok: true });
+  } catch (err) {
+    return res.status(500).json({ message: err.message || 'Erro ao remover carta.' });
   }
 });
 
