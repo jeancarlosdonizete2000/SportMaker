@@ -48,6 +48,7 @@ export default function OwnerArenasConfigTab({
   const [pricePerHour, setPricePerHour] = useState(200);
   const [pricePerPlayer, setPricePerPlayer] = useState(20);
   const [image, setImage] = useState('');
+  const [gallery, setGallery] = useState([]);
   const [amenitiesText, setAmenitiesText] = useState('');
   const [courts, setCourts] = useState([]);
   const [onSiteServices, setOnSiteServices] = useState([]);
@@ -91,9 +92,10 @@ export default function OwnerArenasConfigTab({
       );
       setPricePerHour(200);
       setPricePerPlayer(20);
-      setImage(
-        'https://images.unsplash.com/photo-1574629810360-7efbbe195018?auto=format&fit=crop&w=1000&q=80'
-      );
+      const defaultCover =
+        'https://images.unsplash.com/photo-1574629810360-7efbbe195018?auto=format&fit=crop&w=1000&q=80';
+      setImage(defaultCover);
+      setGallery([defaultCover]);
       setAmenitiesText(
         'Estacionamento, Churrasqueira Gourmet, Bar & Restaurante, Vestiário VIP, Wi-Fi 6'
       );
@@ -146,7 +148,15 @@ export default function OwnerArenasConfigTab({
       setDescription(currentArena.description || '');
       setPricePerHour(currentArena.pricePerHour || 200);
       setPricePerPlayer(currentArena.pricePerPlayer || 20);
-      setImage(currentArena.image || '');
+      const initialCover = currentArena.image || currentArena.gallery?.[0] || '';
+      const initialGallery =
+        Array.isArray(currentArena.gallery) && currentArena.gallery.length > 0
+          ? currentArena.gallery.filter(Boolean)
+          : initialCover
+            ? [initialCover]
+            : [];
+      setImage(initialCover);
+      setGallery(initialGallery);
       setAmenitiesText((currentArena.amenities || []).join(', '));
       setCourts(currentArena.courts || []);
       setOnSiteServices(currentArena.onSiteServices || []);
@@ -156,15 +166,41 @@ export default function OwnerArenasConfigTab({
   }, [currentArena, isCreatingNew]);
 
   const handleImageUpload = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        setImage(reader.result);
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    files.forEach((file) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === 'string') {
+          const dataUrl = reader.result;
+          setGallery((prev) => {
+            if (prev.includes(dataUrl)) return prev;
+            const next = [...prev, dataUrl];
+            return next;
+          });
+          setImage((prevCover) => prevCover || dataUrl);
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+
+    e.target.value = '';
+  };
+
+  const handleSetCoverImage = (imgUrl) => {
+    setImage(imgUrl);
+    setGallery((prev) => [imgUrl, ...prev.filter((item) => item !== imgUrl)]);
+  };
+
+  const handleRemoveGalleryImage = (imgUrl) => {
+    setGallery((prev) => {
+      const updated = prev.filter((item) => item !== imgUrl);
+      if (image === imgUrl) {
+        setImage(updated[0] || '');
       }
-    };
-    reader.readAsDataURL(file);
+      return updated;
+    });
   };
 
   const handleAddCourt = () => {
@@ -224,12 +260,15 @@ export default function OwnerArenasConfigTab({
   };
 
   const handleAddSlot = () => {
-    if (!newSlotTime.trim()) return;
-    if (slots.some((s) => s.time === newSlotTime.trim())) return;
-    setSlots((prev) => [
-      ...prev,
-      { time: newSlotTime.trim(), status: 'available', highlight: '', discount: '' },
-    ]);
+    const cleanTime = newSlotTime.trim();
+    if (!cleanTime) return;
+    if (slots.some((s) => s.time === cleanTime)) return;
+    setSlots((prev) =>
+      [
+        ...prev,
+        { time: cleanTime, status: 'available', highlight: '', discount: '' },
+      ].sort((a, b) => a.time.localeCompare(b.time))
+    );
   };
 
   const handleRemoveSlot = (time) => {
@@ -296,8 +335,15 @@ export default function OwnerArenasConfigTab({
       description: description.trim(),
       pricePerHour: Number(pricePerHour) || 200,
       pricePerPlayer: Number(pricePerPlayer) || 20,
-      image,
-      gallery: [image],
+      image: image || gallery[0] || '',
+      gallery:
+        gallery.length > 0
+          ? [image || gallery[0], ...gallery.filter((g) => g !== (image || gallery[0]))].filter(
+              Boolean
+            )
+          : image
+            ? [image]
+            : [],
       amenities: amenitiesText
         .split(',')
         .map((a) => a.trim())
@@ -305,7 +351,9 @@ export default function OwnerArenasConfigTab({
       courts,
       onSiteServices,
       products,
-      slots,
+      slots: Array.from(
+        new Map((slots || []).map((s) => [s.time, s])).values()
+      ),
     };
 
     try {
@@ -400,44 +448,103 @@ export default function OwnerArenasConfigTab({
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            {/* Photo Preview & Upload */}
+            {/* Photo Gallery Preview & Multi-Image Upload */}
             <div className="lg:col-span-4 space-y-3">
-              <label className="block text-xs font-bold text-slate-300">
-                Foto de Capa da Arena
-              </label>
-              <div className="h-48 rounded-2xl overflow-hidden border border-white/15 relative bg-dark-950">
-                {image && (
-                  <img
-                    src={image}
-                    alt={name}
-                    className="w-full h-full object-cover"
-                  />
+              <div className="flex items-center justify-between">
+                <label className="block text-xs font-bold text-slate-300">
+                  Fotos da Arena ({gallery.length})
+                </label>
+                <span className="text-[11px] font-semibold text-neon">
+                  Suporta várias fotos
+                </span>
+              </div>
+
+              {/* Main Cover Preview */}
+              <div className="h-48 rounded-2xl overflow-hidden border border-white/15 relative bg-dark-950 flex items-center justify-center">
+                {image ? (
+                  <>
+                    <img
+                      src={image}
+                      alt={name}
+                      className="w-full h-full object-cover"
+                    />
+                    <span className="absolute top-2.5 left-2.5 px-2.5 py-1 rounded-lg bg-dark-950/90 border border-neon/40 text-[10px] font-black uppercase text-neon">
+                      Foto de Capa Principal
+                    </span>
+                  </>
+                ) : (
+                  <span className="text-xs text-slate-500">
+                    Nenhuma foto anexada ainda
+                  </span>
                 )}
               </div>
+
+              {/* Multi-file Upload Button */}
               <div className="flex gap-2">
                 <input
                   ref={fileInputRef}
                   type="file"
                   accept="image/*"
+                  multiple
                   onChange={handleImageUpload}
                   className="hidden"
                 />
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="w-full py-2.5 px-3 rounded-xl bg-white/10 hover:bg-white/15 border border-white/15 text-xs font-bold text-white flex items-center justify-center gap-2"
+                  className="w-full py-2.5 px-3 rounded-xl bg-neon hover:bg-neon-400 text-dark-950 font-display font-extrabold text-xs flex items-center justify-center gap-2 shadow-neon transition-all"
                 >
-                  <Upload className="w-4 h-4 text-neon" />
-                  Enviar Foto do Computador/Celular
+                  <Upload className="w-4 h-4" />
+                  Anexar Fotos (Pode Selecionar Várias)
                 </button>
               </div>
-              <input
-                type="text"
-                value={image}
-                onChange={(e) => setImage(e.target.value)}
-                placeholder="Ou cole a URL da imagem..."
-                className="w-full bg-dark-950 border border-white/10 rounded-xl px-3 py-2 text-xs text-slate-300 focus:outline-none focus:border-neon"
-              />
+
+              {/* Thumbnails Grid of Attached Images */}
+              {gallery.length > 0 && (
+                <div className="space-y-1.5 pt-1">
+                  <span className="block text-[11px] font-semibold text-slate-400">
+                    Galeria anexada (clique na foto para definir como capa):
+                  </span>
+                  <div className="grid grid-cols-3 gap-2">
+                    {gallery.map((imgUrl, idx) => {
+                      const isCover = image === imgUrl;
+                      return (
+                        <div
+                          key={idx}
+                          onClick={() => handleSetCoverImage(imgUrl)}
+                          className={`group relative h-20 rounded-xl overflow-hidden border-2 cursor-pointer transition-all ${
+                            isCover
+                              ? 'border-neon shadow-neon'
+                              : 'border-white/15 opacity-80 hover:opacity-100'
+                          }`}
+                        >
+                          <img
+                            src={imgUrl}
+                            alt={`Foto ${idx + 1}`}
+                            className="w-full h-full object-cover"
+                          />
+                          {isCover && (
+                            <span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded bg-neon text-dark-950 text-[8px] font-black uppercase">
+                              Capa
+                            </span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRemoveGalleryImage(imgUrl);
+                            }}
+                            title="Remover foto"
+                            className="absolute top-1 right-1 p-1 rounded-lg bg-dark-950/85 text-slate-300 hover:text-red-400 border border-white/10"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Text Inputs */}

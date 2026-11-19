@@ -9,6 +9,15 @@ import {
 } from 'lucide-react';
 
 export default function ArenaCard({ arena, chosenSlot, onSelectSlot, onBook, onViewDetails }) {
+  const now = new Date();
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+  const isSlotPast = (timeStr) => {
+    const [hh, mm] = String(timeStr || '').split(':').map(Number);
+    if (Number.isNaN(hh)) return false;
+    return hh * 60 + (Number.isNaN(mm) ? 0 : mm) <= currentMinutes;
+  };
+
   return (
     <div
       onClick={() => onViewDetails && onViewDetails(arena)}
@@ -78,24 +87,27 @@ export default function ArenaCard({ arena, chosenSlot, onSelectSlot, onBook, onV
             <div className="grid grid-cols-5 gap-2">
               {arena.slots.map((slotObj) => {
                 const isBooked = slotObj.status === 'booked';
-                const isSelected = chosenSlot === slotObj.time;
+                const isPast = !isBooked && isSlotPast(slotObj.time);
+                const isDisabled = isBooked || isPast;
+                const isSelected = !isDisabled && chosenSlot === slotObj.time;
                 return (
                   <button
                     key={slotObj.time}
-                    disabled={isBooked}
+                    disabled={isDisabled}
                     onClick={(e) => {
                       e.stopPropagation();
                       onSelectSlot(arena.id, slotObj.time);
                     }}
-                    className={`relative py-2.5 px-1 rounded-xl text-xs font-bold border transition-all ${isBooked
+                    className={`relative py-2.5 px-1 rounded-xl text-xs font-bold border transition-all ${
+                      isDisabled
                         ? 'bg-white/5 border-white/5 text-slate-600 line-through cursor-not-allowed'
                         : isSelected
                           ? 'bg-neon text-dark-950 border-neon shadow-neon scale-[1.03]'
                           : 'bg-dark-950/70 text-slate-200 border-white/10 hover:border-neon/40'
-                      }`}
+                    }`}
                   >
                     {slotObj.time}
-                    {slotObj.discount && !isBooked && (
+                    {slotObj.discount && !isDisabled && (
                       <span className="block text-[9px] text-emerald-400 font-extrabold">
                         {slotObj.discount}
                       </span>

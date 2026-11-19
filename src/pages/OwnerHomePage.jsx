@@ -24,24 +24,28 @@ export default function OwnerHomePage() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 
-  const [arenas, setArenas] = useState([]);
-  const [bookings, setBookings] = useState([]);
-  const [metrics, setMetrics] = useState({
-    totalRevenue: 0,
-    courtRevenue: 0,
-    productsRevenue: 0,
-    pendingRevenue: 0,
-    totalBookingsCount: 0,
-    paidBookingsCount: 0,
-    averageTicket: 0,
-  });
-  const [loadingData, setLoadingData] = useState(true);
+  const cachedDash = ownerService.getCachedOwnerDashboard();
+  const [arenas, setArenas] = useState(() => cachedDash?.arenas || []);
+  const [bookings, setBookings] = useState(() => cachedDash?.bookings || []);
+  const [metrics, setMetrics] = useState(
+    () =>
+      cachedDash?.metrics || {
+        totalRevenue: 0,
+        courtRevenue: 0,
+        productsRevenue: 0,
+        pendingRevenue: 0,
+        totalBookingsCount: 0,
+        paidBookingsCount: 0,
+        averageTicket: 0,
+      }
+  );
+  const [loadingData, setLoadingData] = useState(!cachedDash);
   const [modalArena, setModalArena] = useState(null);
 
-  const loadOwnerDashboard = useCallback(async () => {
+  const loadOwnerDashboard = useCallback(async (forceRefresh = false) => {
     try {
       setLoadingData(true);
-      const data = await ownerService.getDashboardData();
+      const data = await ownerService.getDashboardData({ forceRefresh });
       setArenas(data.arenas || []);
       setBookings(data.bookings || []);
       if (data.metrics) setMetrics(data.metrics);
@@ -53,7 +57,7 @@ export default function OwnerHomePage() {
   }, []);
 
   useEffect(() => {
-    loadOwnerDashboard();
+    loadOwnerDashboard(false);
   }, [loadOwnerDashboard]);
 
   const handleSaveArena = async (arenaId, updates) => {
@@ -85,12 +89,12 @@ export default function OwnerHomePage() {
 
   const handleConfirmNewBooking = async (bookingPayload) => {
     await ownerService.createBooking(bookingPayload);
-    await loadOwnerDashboard();
+    await loadOwnerDashboard(true);
   };
 
   const handleUpdateBookingStatus = async (bookingId, statusUpdates) => {
     await ownerService.updateBookingStatus(bookingId, statusUpdates);
-    await loadOwnerDashboard();
+    await loadOwnerDashboard(true);
   };
 
   const handleLogout = () => {
@@ -132,7 +136,7 @@ export default function OwnerHomePage() {
 
           <div className="flex items-center gap-2">
             <button
-              onClick={loadOwnerDashboard}
+              onClick={() => loadOwnerDashboard(true)}
               title="Atualizar dados do MongoDB"
               className="p-2 rounded-lg text-slate-400 hover:text-emerald-400"
             >

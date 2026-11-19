@@ -38,11 +38,18 @@ export default function BookingModal({
               {arena.name}
             </h3>
             <p className="text-xs text-slate-400">
-              {arena.neighborhood} • Horário selecionado:{' '}
+              {arena.selectedCourtName || arena.neighborhood} • Data e Horário:{' '}
               <strong className="text-white">
-                Hoje às {selectedSlot || '19:00'}
+                {arena.selectedDate || 'Hoje'} às {arena.selectedSlotTime || selectedSlot || '19:00'}
               </strong>
             </p>
+            {arena.matchVisibility && (
+              <span className="inline-block mt-1 px-2.5 py-0.5 rounded-full bg-white/10 text-[10px] font-bold text-neon">
+                {arena.matchVisibility === 'public'
+                  ? '🌐 Partida Pública (Vai para o Lobby)'
+                  : '🔒 Partida Privada (Somente Amigos)'}
+              </span>
+            )}
           </div>
           <button
             onClick={onClose}

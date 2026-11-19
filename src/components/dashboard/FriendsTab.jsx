@@ -17,18 +17,25 @@ import { ownerService } from '../../services/ownerService';
 
 export default function FriendsTab() {
   const navigate = useNavigate();
-  const [friends, setFriends] = useState([]);
+  const cachedFriends = ownerService.getCachedFriendsData();
+  const [friends, setFriends] = useState(() => cachedFriends?.friends || []);
 
   const openPlayerProfile = (person) => {
     if (!person?.id) return;
     navigate(`/jogador/${person.id}`, { state: { player: person } });
   };
-  const [receivedRequests, setReceivedRequests] = useState([]);
-  const [sentRequests, setSentRequests] = useState([]);
-  const [suggestions, setSuggestions] = useState([]);
+  const [receivedRequests, setReceivedRequests] = useState(
+    () => cachedFriends?.receivedRequests || []
+  );
+  const [sentRequests, setSentRequests] = useState(
+    () => cachedFriends?.sentRequests || []
+  );
+  const [suggestions, setSuggestions] = useState(
+    () => cachedFriends?.suggestions || []
+  );
   const [searchResults, setSearchResults] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!cachedFriends);
   const [searching, setSearching] = useState(false);
   const [invitedIds, setInvitedIds] = useState({});
   const [actionId, setActionId] = useState(null);

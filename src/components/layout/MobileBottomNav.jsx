@@ -5,10 +5,13 @@ import {
   Users,
   Calendar,
   HeartHandshake,
-  Settings,
+  Bell,
 } from 'lucide-react';
 
-export default function MobileBottomNav({ myMatchesCount = 0 }) {
+export default function MobileBottomNav({
+  myMatchesCount = 0,
+  unreadNotificationsCount = 0,
+}) {
   const leftItems = [
     { id: 'arenas', path: '/app/arenas', label: 'Arenas', icon: MapPin },
     {
@@ -22,7 +25,13 @@ export default function MobileBottomNav({ myMatchesCount = 0 }) {
 
   const rightItems = [
     { id: 'friends', path: '/app/amigos', label: 'Amigos', icon: HeartHandshake },
-    { id: 'settings', path: '/app/configuracoes', label: 'Conta', icon: Settings },
+    {
+      id: 'notifications',
+      path: '/app/notificacoes',
+      label: 'Notificações',
+      icon: Bell,
+      badge: unreadNotificationsCount,
+    },
   ];
 
   return (
@@ -70,7 +79,7 @@ export default function MobileBottomNav({ myMatchesCount = 0 }) {
               key={item.id}
               to={item.path}
               className={({ isActive }) =>
-                `flex flex-col items-center gap-0.5 px-2 py-1 rounded-xl font-semibold text-[11px] transition-colors ${
+                `relative flex flex-col items-center gap-0.5 px-2 py-1 rounded-xl font-semibold text-[11px] transition-colors ${
                   isActive
                     ? item.isProTab
                       ? 'text-amber-400'
@@ -83,6 +92,15 @@ export default function MobileBottomNav({ myMatchesCount = 0 }) {
             >
               <Icon className="w-5 h-5" />
               <span>{item.label}</span>
+              {item.badge > 0 && (
+                <span
+                  className={`absolute -top-0.5 right-1 w-4 h-4 rounded-full text-[9px] font-black flex items-center justify-center ${
+                    item.badgeColor || 'bg-neon text-dark-950'
+                  }`}
+                >
+                  {item.badge}
+                </span>
+              )}
             </NavLink>
           );
         })}

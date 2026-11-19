@@ -32,6 +32,18 @@ export default function OwnerScheduleTab({
     return matchesArena && matchesDate;
   });
 
+  const availableDateFilters = [
+    'Todos',
+    ...Array.from(
+      new Set(
+        bookings
+          .filter((b) => !currentArena || String(b.arenaId) === String(currentArena._id))
+          .map((b) => b.dateLabel)
+          .filter(Boolean)
+      )
+    ),
+  ];
+
   return (
     <div className="space-y-8 pb-8">
       {/* Header */}
@@ -134,8 +146,8 @@ export default function OwnerScheduleTab({
 
       {/* Filter Pills for Bookings List */}
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-2">
-          {['Todos', 'Hoje', 'Amanhã', 'Sábado'].map((day) => (
+        <div className="flex flex-wrap items-center gap-2">
+          {availableDateFilters.map((day) => (
             <button
               key={day}
               onClick={() => setSelectedDateFilter(day)}

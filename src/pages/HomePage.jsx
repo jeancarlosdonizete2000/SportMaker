@@ -51,8 +51,8 @@ export default function HomePage({
     }
   };
 
-  // Arena Explorer & Search Filters State
-  const [dbArenas, setDbArenas] = useState([]);
+  // Arena Explorer & Search Filters State (Inicializa instantaneamente com cache local da máquina do usuário)
+  const [dbArenas, setDbArenas] = useState(() => ownerService.getCachedPublicArenas());
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [maxRadius, setMaxRadius] = useState(5);
@@ -95,8 +95,8 @@ export default function HomePage({
     4: '20:00',
   });
 
-  // Lobbies & Create Match Modal State
-  const [lobbies, setLobbies] = useState([]);
+  // Lobbies & Create Match Modal State (Inicializa instantaneamente com cache local)
+  const [lobbies, setLobbies] = useState(() => ownerService.getCachedPublicLobbies());
   const [createMatchModalOpen, setCreateMatchModalOpen] = useState(false);
 
   // Booking Flow Custom Hook

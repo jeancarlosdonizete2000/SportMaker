@@ -9,12 +9,14 @@ import {
   Settings,
   LogOut,
   Crown,
+  Bell,
 } from 'lucide-react';
 
 export const APP_NAV_TABS = [
   { id: 'arenas', path: '/app/arenas', label: 'Home Arenas', icon: MapPin },
   { id: 'lobbies', path: '/app/lobbies', label: 'Lobby de Partidas', icon: Users },
   { id: 'my-matches', path: '/app/minhas-partidas', label: 'Minhas Partidas', icon: Calendar },
+  { id: 'notifications', path: '/app/notificacoes', label: 'Notificações', icon: Bell },
   { id: 'friends', path: '/app/amigos', label: 'Amigos', icon: HeartHandshake },
   { id: 'profile', path: '/app/perfil', label: 'Meu Perfil', icon: Trophy },
   { id: 'seja-pro', path: '/app/seja-pro', label: 'Seja PRO', icon: Crown, isProTab: true },
@@ -23,6 +25,7 @@ export const APP_NAV_TABS = [
 
 export default function UserSidebar({
   myMatchesCount = 0,
+  unreadNotificationsCount = 0,
   user,
   onLogout,
 }) {
@@ -114,6 +117,16 @@ export default function UserSidebar({
                         }`}
                       >
                         {myMatchesCount}
+                      </span>
+                    )}
+
+                    {tab.id === 'notifications' && unreadNotificationsCount > 0 && (
+                      <span
+                        className={`text-[11px] px-2 py-0.5 rounded-full font-black ${
+                          isActive ? 'bg-dark-950/20 text-dark-950' : 'bg-neon/15 text-neon'
+                        }`}
+                      >
+                        {unreadNotificationsCount}
                       </span>
                     )}
 

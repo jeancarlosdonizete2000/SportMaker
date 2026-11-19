@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { MONGO_CONFIG } from '../services/mongoClient';
 import { ownerService } from '../services/ownerService';
+import { clientCache } from '../utils/clientCache';
 
 const ARENA_TIERS = [
   {
@@ -211,6 +212,9 @@ export default function MatchEvaluationPage({ myMatches = [], onEvaluationComple
         }),
       });
       const data = await response.json().catch(() => ({}));
+      clientCache.invalidate('public_arenas', { userScoped: false });
+      clientCache.invalidate('my_matches', { userScoped: true });
+      clientCache.invalidate('friends_data', { userScoped: true });
 
       if (onEvaluationComplete && match?.id) {
         onEvaluationComplete(match.id, {

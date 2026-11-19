@@ -82,7 +82,7 @@ export const ARENAS_DATA = [
       { id: 'p4', name: 'Coletes Higienizados (Jogo c/ 14)', price: 0, tag: 'Grátis' },
     ],
     slots: [
-      { time: '18:00', status: 'booked' },
+      { time: '18:00', status: 'available' },
       { time: '19:00', status: 'available', highlight: 'Horário Nobre' },
       { time: '20:00', status: 'available' },
       { time: '21:00', status: 'available' },
@@ -164,7 +164,7 @@ export const ARENAS_DATA = [
     ],
     slots: [
       { time: '17:30', status: 'available' },
-      { time: '18:30', status: 'booked' },
+      { time: '18:30', status: 'available' },
       { time: '19:30', status: 'available', highlight: 'Última Quadra' },
       { time: '20:30', status: 'available' },
       { time: '21:30', status: 'available' },
@@ -246,7 +246,7 @@ export const ARENAS_DATA = [
     slots: [
       { time: '18:00', status: 'available' },
       { time: '19:00', status: 'available' },
-      { time: '20:00', status: 'booked' },
+      { time: '20:00', status: 'available' },
       { time: '21:00', status: 'available', highlight: 'Alta Procura' },
       { time: '22:00', status: 'available' },
     ],
@@ -322,7 +322,7 @@ export const ARENAS_DATA = [
       { time: '18:00', status: 'available' },
       { time: '19:00', status: 'available' },
       { time: '20:00', status: 'available' },
-      { time: '21:00', status: 'booked' },
+      { time: '21:00', status: 'available' },
       { time: '22:00', status: 'available', discount: '-20%' },
     ],
   },

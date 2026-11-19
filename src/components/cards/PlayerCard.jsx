@@ -71,9 +71,8 @@ export default function PlayerCard({ player, theme, customTag, enableDownload = 
 
   return (
     <div
-      className={`relative w-full mx-auto select-none group ${
-        theme.bgImage ? 'max-w-[400px]' : 'max-w-[360px]'
-      }`}
+      className={`relative w-full mx-auto select-none group ${theme.bgImage ? 'max-w-[400px]' : 'max-w-[360px]'
+        }`}
     >
       {/* Aura de raio exclusiva do card Future Stars Neon PRO */}
       {theme.id === 'card-future-stars-pro' && (
@@ -140,55 +139,6 @@ export default function PlayerCard({ player, theme, customTag, enableDownload = 
             </>
           )}
 
-          {/* Efeito 2: Tempestade de Raios Animados (Thunderstruck PRO) */}
-          {isLightning && (
-            <>
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_15%,rgba(34,211,238,0.35),transparent_70%)] pointer-events-none" />
-              <svg
-                viewBox="0 0 300 420"
-                className="absolute inset-0 w-full h-full pointer-events-none fc-lightning-svg"
-                fill="none"
-              >
-                <path
-                  d="M65 0 L42 110 L82 118 L30 250 L95 140 L58 130 L98 0 Z"
-                  fill="url(#boltGrad1)"
-                  opacity="0.75"
-                />
-                <path
-                  d="M245 15 L210 125 L252 135 L195 285 L270 150 L232 140 L275 15 Z"
-                  fill="url(#boltGrad1)"
-                  opacity="0.65"
-                />
-                <defs>
-                  <linearGradient id="boltGrad1" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#E0F2FE" />
-                    <stop offset="50%" stopColor="#38BDF8" />
-                    <stop offset="100%" stopColor="#0284C7" stopOpacity="0" />
-                  </linearGradient>
-                </defs>
-              </svg>
-            </>
-          )}
-
-          {/* Efeito 3: Chamas e Brasas Subindo (Chama Imortal PRO) */}
-          {isFire && (
-            <>
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_85%,rgba(249,115,22,0.42),transparent_65%)] pointer-events-none" />
-              <div className="absolute bottom-6 left-8 w-3 h-3 rounded-full bg-amber-300 blur-[1px] fc-ember pointer-events-none" />
-              <div
-                className="absolute bottom-4 left-1/3 w-2.5 h-2.5 rounded-full bg-orange-400 blur-[1px] fc-ember pointer-events-none"
-                style={{ animationDelay: '0.6s' }}
-              />
-              <div
-                className="absolute bottom-8 right-1/4 w-3.5 h-3.5 rounded-full bg-red-400 blur-[1px] fc-ember pointer-events-none"
-                style={{ animationDelay: '1.1s' }}
-              />
-              <div
-                className="absolute bottom-5 right-10 w-2 h-2 rounded-full bg-yellow-300 blur-[1px] fc-ember pointer-events-none"
-                style={{ animationDelay: '1.7s' }}
-              />
-            </>
-          )}
 
           {/* UPPER SECTION EA FC: Coluna Esquerda (OVR + Posição + Bandeira/Clube) + Retrato à Direita */}
           <div className="relative z-10 grid grid-cols-12 items-center gap-2 pt-1 pb-3">

@@ -14,11 +14,13 @@ import UserSidebar from '../components/layout/UserSidebar';
 
 const PublicLobbiesTab = lazy(() => import('../components/dashboard/PublicLobbiesTab'));
 const MyMatchesTab = lazy(() => import('../components/dashboard/MyMatchesTab'));
+const NotificationsTab = lazy(() => import('../components/dashboard/NotificationsTab'));
 const FriendsTab = lazy(() => import('../components/dashboard/FriendsTab'));
 const ProfileTab = lazy(() => import('../components/dashboard/ProfileTab'));
 const ProSubscriptionTab = lazy(() => import('../components/dashboard/ProSubscriptionTab'));
 const AccountSettingsTab = lazy(() => import('../components/dashboard/AccountSettingsTab'));
 const ArenaDetailsPage = lazy(() => import('./ArenaDetailsPage'));
+const MatchDetailsPage = lazy(() => import('./MatchDetailsPage'));
 const MatchEvaluationPage = lazy(() => import('./MatchEvaluationPage'));
 const BookingModal = lazy(() => import('../components/modals/BookingModal'));
 const CreateMatchModal = lazy(() => import('../components/modals/CreateMatchModal'));
@@ -39,11 +41,11 @@ export default function UserHomePage({
   const { user, isPro, updateUserProfile, logout } = useAuth();
   const navigate = useNavigate();
 
-  // Arenas Filter State
+  // Arenas Filter State (Inicializa instantaneamente do cache do navegador)
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [maxRadius, setMaxRadius] = useState(10);
-  const [dbArenas, setDbArenas] = useState([]);
+  const [dbArenas, setDbArenas] = useState(() => ownerService.getCachedPublicArenas());
   const [locationModalOpen, setLocationModalOpen] = useState(false);
   const [userLocation, setUserLocation] = useState(
     () => user?.userLocation?.label ? user.userLocation : locationService.getStoredLocation()
@@ -121,6 +123,15 @@ export default function UserHomePage({
         }
       })
       .catch(() => {});
+
+    ownerService
+      .getNotifications()
+      .then((res) => {
+        if (res && Array.isArray(res.notifications)) {
+          setNotifications(res.notifications);
+        }
+      })
+      .catch(() => {});
   }, [user?._id]);
 
   const allArenas = useMemo(() => {
@@ -152,10 +163,34 @@ export default function UserHomePage({
       .sort((a, b) => (a.distanceKmValue ?? 99) - (b.distanceKmValue ?? 99));
   }, [dbArenas, userLocation]);
 
-  // Lobbies & My Matches State (Iniciam vazios para novas contas, carregados do MongoDB)
-  const [publicLobbies, setPublicLobbies] = useState([]);
-  const [requestedLobbyIds, setRequestedLobbyIds] = useState([]);
-  const [myMatches, setMyMatches] = useState([]);
+  // Lobbies & My Matches State (Iniciam instantaneamente do cache local do navegador se disponível)
+  const [publicLobbies, setPublicLobbies] = useState(() =>
+    ownerService.getCachedPublicLobbies()
+  );
+  const [myMatches, setMyMatches] = useState(() => ownerService.getCachedMyMatches());
+  const [notifications, setNotifications] = useState([]);
+  const unreadNotificationsCount = useMemo(
+    () => notifications.filter((n) => !n.read).length,
+    [notifications]
+  );
+
+  const handleMarkNotificationRead = async (notifId) => {
+    setNotifications((prev) =>
+      prev.map((n) => (String(n.id || n._id) === String(notifId) ? { ...n, read: true } : n))
+    );
+    await ownerService.markNotificationRead(notifId).catch(() => {});
+  };
+
+  const handleMarkAllNotificationsRead = async () => {
+    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+    await ownerService.markAllNotificationsRead().catch(() => {});
+  };
+  const [requestedLobbyIds, setRequestedLobbyIds] = useState(() =>
+    ownerService
+      .getCachedMyMatches()
+      .filter((m) => String(m.hostId) !== String(user?._id))
+      .map((m) => String(m.id))
+  );
   const [createMatchModalOpen, setCreateMatchModalOpen] = useState(false);
 
   // Booking Hook
@@ -255,81 +290,131 @@ export default function UserHomePage({
 
   // Handle Confirming an Arena Booking and Adding to My Matches + MongoDB Owner Schedule
   const handleConfirmArenaBooking = async () => {
-    confirmBooking();
-    if (activeBookingArena) {
-      const slot = selectedSlots[activeBookingArena.id] || '19:00';
-      const chosenProducts = (activeBookingArena.products || []).filter((p) =>
-        selectedProducts.includes(p.id)
-      );
-      const chosenProductNames = chosenProducts.map((p) => p.name);
-      const productsSum = chosenProducts.reduce((acc, p) => acc + (p.price || 0), 0);
+    if (!activeBookingArena) return;
+    const slot =
+      activeBookingArena.selectedSlotTime ||
+      selectedSlots[activeBookingArena.id] ||
+      '19:00';
+    const dateLabel = activeBookingArena.selectedDate || 'Hoje';
+    const courtId =
+      activeBookingArena.selectedCourtId ||
+      activeBookingArena.courts?.[0]?.id ||
+      'c1';
+    const courtName =
+      activeBookingArena.selectedCourtName ||
+      activeBookingArena.courts?.[0]?.name ||
+      'Quadra Principal';
+    const isPublicLobby =
+      activeBookingArena.isPublicLobby !== undefined
+        ? Boolean(activeBookingArena.isPublicLobby)
+        : false;
 
-      // Persiste a reserva também no MongoDB caso a arena esteja registrada no banco
-      if (activeBookingArena._id) {
-        ownerService
-          .createBooking({
-            arenaId: activeBookingArena._id,
-            courtName:
-              activeBookingArena.selectedCourtName ||
-              activeBookingArena.courts?.[0]?.name ||
-              'Quadra Principal',
-            surface:
-              activeBookingArena.selectedSurface ||
-              activeBookingArena.courts?.[0]?.surface ||
-              'Grama Sintética',
-            sport: activeBookingArena.sportLabel,
-            dateLabel: activeBookingArena.selectedDate || 'Hoje',
-            slotTime: slot,
-            customerName: user?.name || 'Atleta Sport Maker',
-            customerEmail: user?.email || '',
-            isProCustomer: isPro,
-            courtAmount: Math.max(0, totalAmount - productsSum),
-            productsAmount: productsSum,
-            productsList: chosenProductNames,
-            paymentMethod: 'Pix',
-            paymentStatus: 'paid',
-            notes: splitWithFriends ? 'Reserva pelo App (Pix Split Ativado)' : 'Reserva pelo App',
-          })
-          .catch(() => { });
-      }
+    const chosenProducts = (activeBookingArena.products || []).filter((p) =>
+      selectedProducts.includes(p.id)
+    );
+    const chosenProductNames = chosenProducts.map((p) => p.name);
+    const productsSum = chosenProducts.reduce((acc, p) => acc + (p.price || 0), 0);
 
-      const matchPayload = {
-        title: `Reserva Oficial • ${
-          activeBookingArena.selectedCourtName ||
-          activeBookingArena.sportLabel.split('•')[0]
-        }`,
-        arenaId: String(activeBookingArena._id || activeBookingArena.id || ''),
-        arena: activeBookingArena.name,
-        neighborhood: `${activeBookingArena.neighborhood}${
-          activeBookingArena.selectedSurface
-            ? ` • ${activeBookingArena.selectedSurface}`
-            : ''
-        }`,
-        distance: activeBookingArena.distance || '1.5 km',
-        time: `${activeBookingArena.selectedDate || 'Hoje'}, ${slot}`,
-        role: 'Responsável pela Reserva',
-        status: 'Confirmada',
-        totalSlots: 14,
-        filledSlots: 1,
-        pricePerPlayer: activeBookingArena.pricePerPlayer,
-        extras: chosenProductNames,
-        isPublicLobby: false,
-      };
-
+    // Persiste a reserva também no MongoDB caso a arena esteja registrada no banco (com checagem anti-duplicidade)
+    let createdBookingId = '';
+    if (activeBookingArena._id) {
       try {
-        const savedMatch = await ownerService.createMatch(matchPayload);
-        setMyMatches((prev) => [savedMatch, ...prev]);
-      } catch {
-        setMyMatches((prev) => [
-          {
-            id: `book_${Date.now()}`,
-            ...matchPayload,
-            date: matchPayload.time,
-            playersCount: 'Convocação Aberta',
-          },
-          ...prev,
-        ]);
+        const bookingRes = await ownerService.createBooking({
+          arenaId: activeBookingArena._id,
+          courtId,
+          courtName,
+          surface:
+            activeBookingArena.selectedSurface ||
+            activeBookingArena.courts?.[0]?.surface ||
+            'Grama Sintética',
+          sport: activeBookingArena.sportLabel,
+          dateLabel,
+          slotTime: slot,
+          customerName: user?.name || 'Atleta Sport Maker',
+          customerEmail: user?.email || '',
+          isProCustomer: isPro,
+          courtAmount: Math.max(0, totalAmount - productsSum),
+          productsAmount: productsSum,
+          productsList: chosenProductNames,
+          paymentMethod: 'Pix',
+          paymentStatus: 'paid',
+          notes: `${isPublicLobby ? 'Partida Pública (Lobby)' : 'Somente Amigos'}${
+            splitWithFriends ? ' • Pix Split Ativado' : ''
+          }`,
+        });
+        createdBookingId = String(bookingRes?.booking?._id || '');
+      } catch (err) {
+        alert(
+          err.message ||
+            'Este horário acabou de ser reservado. Escolha outro horário livre.'
+        );
+        return;
       }
+    }
+
+    confirmBooking();
+
+    // Atualiza imediatamente a lista local de horários ocupados da arena para bloquear duplicidade na UI
+    setDbArenas((prev) =>
+      prev.map((a) => {
+        if (String(a._id || a.id) !== String(activeBookingArena._id || activeBookingArena.id)) {
+          return a;
+        }
+        return {
+          ...a,
+          bookedSlots: [
+            ...(a.bookedSlots || []),
+            { courtId, courtName, dateLabel, slotTime: slot },
+          ],
+        };
+      })
+    );
+
+    const matchPayload = {
+      title: `${isPublicLobby ? 'Partida Aberta' : 'Partida Somente Amigos'} • ${
+        courtName || activeBookingArena.sportLabel.split('•')[0]
+      }`,
+      bookingId: createdBookingId,
+      arenaId: String(activeBookingArena._id || activeBookingArena.id || ''),
+      arena: `${activeBookingArena.name} • ${courtName}`,
+      neighborhood: `${activeBookingArena.neighborhood}${
+        activeBookingArena.selectedSurface
+          ? ` • ${activeBookingArena.selectedSurface}`
+          : ''
+      }`,
+      distance: activeBookingArena.distance || '1.5 km',
+      time: `${dateLabel}, ${slot}`,
+      role: 'Organizador (Host)',
+      status: isPublicLobby
+        ? 'Confirmada • Lobby Público Ativo'
+        : 'Confirmada • Somente Amigos',
+      totalSlots: 14,
+      filledSlots: 1,
+      pricePerPlayer: activeBookingArena.pricePerPlayer,
+      neededPositions: ['Qualquer Posição'],
+      extras: [
+        isPublicLobby ? '🌐 Partida Pública' : '🔒 Somente Amigos',
+        ...chosenProductNames,
+      ],
+      isPublicLobby,
+    };
+
+    try {
+      const savedMatch = await ownerService.createMatch(matchPayload);
+      setMyMatches((prev) => [savedMatch, ...prev]);
+      if (isPublicLobby) {
+        setPublicLobbies((prev) => [savedMatch, ...prev]);
+      }
+    } catch {
+      setMyMatches((prev) => [
+        {
+          id: `book_${Date.now()}`,
+          ...matchPayload,
+          date: matchPayload.time,
+          playersCount: '1/14',
+        },
+        ...prev,
+      ]);
     }
   };
 
@@ -337,6 +422,16 @@ export default function UserHomePage({
     await ownerService.cancelMatch(matchId).catch(() => {});
     setMyMatches((prev) => prev.filter((m) => m.id !== matchId));
     setPublicLobbies((prev) => prev.filter((l) => l.id !== matchId));
+  };
+
+  const handleMatchUpdated = (updatedMatch) => {
+    if (!updatedMatch || !updatedMatch.id) return;
+    setMyMatches((prev) =>
+      prev.map((m) => (String(m.id) === String(updatedMatch.id) ? updatedMatch : m))
+    );
+    setPublicLobbies((prev) =>
+      prev.map((l) => (String(l.id) === String(updatedMatch.id) ? updatedMatch : l))
+    );
   };
 
   const handleEvaluationComplete = (matchId, evalSummary) => {
@@ -379,6 +474,7 @@ export default function UserHomePage({
       {/* Left Sidebar Navigation for Desktop (md and up) */}
       <UserSidebar
         myMatchesCount={myMatches.length}
+        unreadNotificationsCount={unreadNotificationsCount}
         user={user}
         onLogout={handleLogout}
       />
@@ -485,11 +581,32 @@ export default function UserHomePage({
                 }
               />
               <Route
+                path="partida/:matchId"
+                element={
+                  <MatchDetailsPage
+                    myMatches={myMatches}
+                    arenas={allArenas}
+                    onMatchUpdated={handleMatchUpdated}
+                    onCancelMatch={handleCancelMatch}
+                  />
+                }
+              />
+              <Route
                 path="avaliar/:matchId"
                 element={
                   <MatchEvaluationPage
                     myMatches={myMatches}
                     onEvaluationComplete={handleEvaluationComplete}
+                  />
+                }
+              />
+              <Route
+                path="notificacoes"
+                element={
+                  <NotificationsTab
+                    notifications={notifications}
+                    onMarkRead={handleMarkNotificationRead}
+                    onMarkAllRead={handleMarkAllNotificationsRead}
                   />
                 }
               />
@@ -504,7 +621,10 @@ export default function UserHomePage({
       </main>
 
       {/* Bottom Tab Bar Exclusiva para Mobile */}
-      <MobileBottomNav myMatchesCount={myMatches.length} />
+      <MobileBottomNav
+        myMatchesCount={myMatches.length}
+        unreadNotificationsCount={unreadNotificationsCount}
+      />
 
       {/* Modals */}
       <Suspense fallback={null}>

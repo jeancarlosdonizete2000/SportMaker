@@ -6,7 +6,7 @@ import { hashPassword, verifyPassword, signJwtToken, verifyJwtToken } from './se
 
 const app = express();
 app.use(cors());
-app.use(express.json({ limit: '5mb' }));
+app.use(express.json({ limit: '25mb' }));
 
 // Garante conexão com o MongoDB em ambientes Serverless (Vercel) e força o banco oficial `sport_maker_db`
 const MONGODB_DB_NAME = (process.env.MONGODB_DB_NAME || 'sport_maker_db').trim();
@@ -130,6 +130,7 @@ const MatchSchema = new mongoose.Schema(
     isProHost: { type: Boolean, default: false },
     freeBallIncluded: { type: Boolean, default: false },
     title: { type: String, required: true, trim: true },
+    bookingId: { type: String, default: '' },
     arenaId: { type: String, default: '' },
     arena: { type: String, required: true },
     neighborhood: { type: String, default: '' },
@@ -142,15 +143,22 @@ const MatchSchema = new mongoose.Schema(
     extras: { type: [String], default: [] },
     isPublicLobby: { type: Boolean, default: true },
     status: { type: String, default: 'Confirmada' },
+    invitedUserIds: { type: [String], default: [] },
     participants: {
       type: [
         {
           userId: { type: String },
           name: { type: String },
           avatar: { type: String },
-          ovr: { type: Number, default: 88 },
+          ovr: { type: Number, default: 0 },
           role: { type: String, default: 'Solicitante' },
           status: { type: String, default: 'Confirmada' },
+          requestStatus: {
+            type: String,
+            enum: ['approved', 'pending', 'rejected'],
+            default: 'approved',
+          },
+          isPro: { type: Boolean, default: false },
           evaluated: { type: Boolean, default: false },
           evaluationStars: { type: Number, default: null },
         },
@@ -333,6 +341,27 @@ const BookingSchema = new mongoose.Schema(
 );
 
 const Booking = mongoose.models.Booking || mongoose.model('Booking', BookingSchema);
+
+// Schema Mongoose para Notificações dos Usuários (Cancelamentos, Reembolsos, Convites)
+const NotificationSchema = new mongoose.Schema(
+  {
+    userId: { type: String, required: true, index: true },
+    type: { type: String, default: 'info' },
+    title: { type: String, required: true },
+    message: { type: String, required: true },
+    matchId: { type: String, default: '' },
+    arenaName: { type: String, default: '' },
+    matchTitle: { type: String, default: '' },
+    dateLabel: { type: String, default: '' },
+    slotTime: { type: String, default: '' },
+    refundAmount: { type: Number, default: 0 },
+    read: { type: Boolean, default: false },
+  },
+  { timestamps: true }
+);
+
+const Notification =
+  mongoose.models.Notification || mongoose.model('Notification', NotificationSchema);
 
 function sanitizeUser(userDoc) {
   const obj = userDoc.toObject ? userDoc.toObject() : { ...userDoc };
@@ -672,13 +701,82 @@ function getAuthenticatedUserFromReq(req) {
   return verifyJwtToken(token);
 }
 
-// GET /api/arenas - Lista arenas cadastradas no MongoDB (público + usado pelos atletas)
+// Cache em memória de curta duração no servidor (evita múltiplas leituras repetidas no MongoDB Atlas)
+let serverArenasCache = { data: null, expiresAt: 0 };
+
+function invalidateServerArenasCache() {
+  serverArenasCache = { data: null, expiresAt: 0 };
+}
+
+// GET /api/arenas - Lista arenas cadastradas no MongoDB + horários já reservados (bookedSlots)
 app.get('/api/arenas', async (req, res) => {
   try {
-    const arenas = await Arena.find().sort({ createdAt: -1 });
-    return res.json({ arenas });
+    const now = Date.now();
+    if (serverArenasCache.data && now < serverArenasCache.expiresAt) {
+      res.set('Cache-Control', 'public, max-age=15, stale-while-revalidate=30');
+      return res.json({ arenas: serverArenasCache.data, cached: true });
+    }
+
+    const [arenas, activeBookings] = await Promise.all([
+      Arena.find().sort({ createdAt: -1 }).lean(),
+      Booking.find({ bookingStatus: { $ne: 'cancelled' } })
+        .select('arenaId courtId courtName dateLabel slotTime')
+        .lean(),
+    ]);
+
+    const bookingsByArena = new Map();
+    for (const b of activeBookings) {
+      const aid = String(b.arenaId);
+      if (!bookingsByArena.has(aid)) {
+        bookingsByArena.set(aid, []);
+      }
+      bookingsByArena.get(aid).push({
+        courtId: b.courtId || 'c1',
+        courtName: b.courtName || '',
+        dateLabel: b.dateLabel || 'Hoje',
+        slotTime: b.slotTime,
+      });
+    }
+
+    const enrichedArenas = arenas.map((a) => ({
+      ...a,
+      bookedSlots: bookingsByArena.get(String(a._id)) || [],
+    }));
+
+    serverArenasCache = {
+      data: enrichedArenas,
+      expiresAt: now + 15 * 1000,
+    };
+    res.set('Cache-Control', 'public, max-age=15, stale-while-revalidate=30');
+    return res.json({ arenas: enrichedArenas });
   } catch (err) {
     return res.status(500).json({ message: err.message || 'Erro ao buscar arenas.' });
+  }
+});
+
+// GET /api/arenas/:id/booked-slots - Consulta leve e em tempo real (sem cache) dos horários já ocupados da arena
+app.get('/api/arenas/:id/booked-slots', async (req, res) => {
+  try {
+    const arenaId = String(req.params.id || '').trim();
+    if (!arenaId) {
+      return res.json({ bookedSlots: [] });
+    }
+    const activeBookings = await Booking.find(
+      { arenaId, bookingStatus: { $ne: 'cancelled' } },
+      { courtId: 1, courtName: 1, dateLabel: 1, slotTime: 1 }
+    ).lean();
+
+    const bookedSlots = activeBookings.map((b) => ({
+      courtId: b.courtId || 'c1',
+      courtName: b.courtName || '',
+      dateLabel: b.dateLabel || 'Hoje',
+      slotTime: b.slotTime,
+    }));
+
+    res.set('Cache-Control', 'no-store');
+    return res.json({ bookedSlots });
+  } catch (err) {
+    return res.status(500).json({ message: err.message || 'Erro ao buscar horários ocupados.' });
   }
 });
 
@@ -799,6 +897,7 @@ app.post('/api/owner/arenas', async (req, res) => {
           ],
     });
 
+    invalidateServerArenasCache();
     return res.status(201).json({ arena: newArena });
   } catch (err) {
     return res.status(500).json({ message: err.message || 'Erro ao criar nova arena.' });
@@ -846,11 +945,38 @@ app.put('/api/owner/arenas/:id', async (req, res) => {
     });
 
     await arena.save();
+    invalidateServerArenasCache();
     return res.json({ arena, message: 'Configurações da arena salvas no MongoDB com sucesso!' });
   } catch (err) {
     return res.status(500).json({ message: err.message || 'Erro ao atualizar arena.' });
   }
 });
+
+function isSlotTimeInPast(dateLabel = 'Hoje', slotTime = '') {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  const todayIso = `${y}-${m}-${d}`;
+  const todayBr = `${d}/${m}/${y}`;
+
+  const cleanDate = String(dateLabel || '').trim();
+  const isToday =
+    cleanDate === 'Hoje' ||
+    cleanDate.startsWith('Hoje') ||
+    cleanDate === todayIso ||
+    cleanDate.includes(todayBr);
+
+  if (!isToday) return false;
+
+  const [hh, mm] = String(slotTime || '')
+    .split(':')
+    .map(Number);
+  if (Number.isNaN(hh)) return false;
+  const slotMinutes = hh * 60 + (Number.isNaN(mm) ? 0 : mm);
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+  return slotMinutes <= currentMinutes;
+}
 
 // POST /api/owner/bookings - Registra novo agendamento (pelo proprietário no balcão/whatsapp ou pelo atleta)
 app.post('/api/owner/bookings', async (req, res) => {
@@ -888,6 +1014,35 @@ app.post('/api/owner/bookings', async (req, res) => {
       return res.status(404).json({ message: 'Arena não encontrada.' });
     }
 
+    const resolvedCourtId = courtId || arena.courts?.[0]?.id || 'c1';
+    const resolvedCourtName = courtName || arena.courts?.[0]?.name || 'Quadra Principal';
+    const resolvedDateLabel = (dateLabel || 'Hoje').trim();
+    const resolvedSlotTime = (slotTime || '19:00').trim();
+
+    if (isSlotTimeInPast(resolvedDateLabel, resolvedSlotTime)) {
+      return res.status(400).json({
+        message: `O horário ${resolvedSlotTime} de hoje já passou. Escolha um horário futuro ou outra data no calendário.`,
+      });
+    }
+
+    // Verifica se já existe agendamento confirmado para a mesma Arena, Quadra, Data e Horário (evita duplicidade)
+    const existingConflict = await Booking.findOne({
+      arenaId: String(arena._id),
+      dateLabel: resolvedDateLabel,
+      slotTime: resolvedSlotTime,
+      bookingStatus: { $ne: 'cancelled' },
+      $or: [
+        { courtId: resolvedCourtId },
+        { courtName: resolvedCourtName },
+      ],
+    });
+
+    if (existingConflict) {
+      return res.status(409).json({
+        message: `Este horário (${resolvedDateLabel} às ${resolvedSlotTime}) já está reservado na quadra ${resolvedCourtName}. Escolha outro horário ou quadra.`,
+      });
+    }
+
     const parsedCourtAmount = Number(courtAmount) || arena.pricePerHour || 200;
     const parsedProductsAmount = Number(productsAmount) || 0;
 
@@ -895,12 +1050,12 @@ app.post('/api/owner/bookings', async (req, res) => {
       arenaId: String(arena._id),
       ownerId: String(arena.ownerId),
       arenaName: arena.name,
-      courtId: courtId || 'c1',
-      courtName: courtName || arena.courts?.[0]?.name || 'Quadra Principal',
+      courtId: resolvedCourtId,
+      courtName: resolvedCourtName,
       surface: surface || arena.courts?.[0]?.surface || 'Grama Sintética',
       sport: sport || arena.courts?.[0]?.sport || 'Futebol Society',
-      dateLabel: dateLabel || 'Hoje',
-      slotTime: slotTime || '19:00',
+      dateLabel: resolvedDateLabel,
+      slotTime: resolvedSlotTime,
       customerName: customerName || 'Cliente Presencial',
       customerPhone: customerPhone || '(11) 99999-0000',
       customerEmail: customerEmail || '',
@@ -915,17 +1070,7 @@ app.post('/api/owner/bookings', async (req, res) => {
       notes: notes || '',
     });
 
-    // Marca o horário como ocupado na grade da arena se for para Hoje
-    if ((dateLabel || 'Hoje') === 'Hoje') {
-      const slotIndex = arena.slots.findIndex((s) => s.time === slotTime);
-      if (slotIndex >= 0) {
-        arena.slots[slotIndex].status = 'booked';
-      } else {
-        arena.slots.push({ time: slotTime, status: 'booked', highlight: '', discount: '' });
-      }
-      await arena.save();
-    }
-
+    invalidateServerArenasCache();
     return res.status(201).json({ booking: newBooking, arena });
   } catch (err) {
     return res.status(500).json({ message: err.message || 'Erro ao criar agendamento.' });
@@ -955,7 +1100,7 @@ app.patch('/api/owner/bookings/:id', async (req, res) => {
 
     await booking.save();
 
-    // Se cancelado, libera o horário na arena
+    // Se cancelado pelo proprietário, libera o horário na arena, cancela a partida do usuário e envia notificação de reembolso
     if (req.body.bookingStatus === 'cancelled') {
       const arena = await Arena.findById(booking.arenaId);
       if (arena) {
@@ -965,8 +1110,70 @@ app.patch('/api/owner/bookings/:id', async (req, res) => {
           await arena.save();
         }
       }
+
+      const expectedTime = `${booking.dateLabel}, ${booking.slotTime}`;
+      const relatedMatches = await Match.find({
+        $or: [
+          { bookingId: String(booking._id) },
+          {
+            arenaId: String(booking.arenaId),
+            time: expectedTime,
+          },
+        ],
+      });
+
+      const affectedUserIds = new Set();
+      let matchedTitle = '';
+
+      for (const m of relatedMatches) {
+        if (!matchedTitle) matchedTitle = m.title;
+        if (m.hostId) affectedUserIds.add(String(m.hostId));
+        if (Array.isArray(m.participants)) {
+          m.participants.forEach((p) => {
+            if (p.userId) affectedUserIds.add(String(p.userId));
+            p.status = 'Cancelada pela Arena • Reembolso Garantido';
+          });
+          m.markModified('participants');
+        }
+        m.status = 'Cancelada pela Arena • Reembolso Garantido';
+        m.isPublicLobby = false;
+        await m.save();
+      }
+
+      if (booking.customerEmail) {
+        const customerUser = await User.findOne({
+          email: String(booking.customerEmail).toLowerCase().trim(),
+        });
+        if (customerUser) {
+          affectedUserIds.add(String(customerUser._id));
+        }
+      }
+
+      const refundValue = Number(booking.totalAmount) || 0;
+      const refundText =
+        refundValue > 0
+          ? `O valor pago (R$ ${refundValue},00) será reembolsado integralmente via ${booking.paymentMethod || 'Pix'}.`
+          : 'Qualquer valor pago por esta reserva será reembolsado integralmente.';
+
+      const notifDocs = Array.from(affectedUserIds).map((uid) => ({
+        userId: uid,
+        type: 'match_cancelled',
+        title: 'Partida cancelada pela arena • Reembolso garantido',
+        message: `O proprietário da arena ${booking.arenaName} cancelou o agendamento de ${booking.dateLabel} às ${booking.slotTime} (${booking.courtName}). Sua partida foi cancelada automaticamente. ${refundText}`,
+        arenaName: booking.arenaName || '',
+        matchTitle: matchedTitle || `${booking.arenaName} • ${booking.courtName}`,
+        dateLabel: booking.dateLabel || '',
+        slotTime: booking.slotTime || '',
+        refundAmount: refundValue,
+        read: false,
+      }));
+
+      if (notifDocs.length > 0) {
+        await Notification.insertMany(notifDocs);
+      }
     }
 
+    invalidateServerArenasCache();
     return res.json({ booking });
   } catch (err) {
     return res.status(500).json({ message: err.message || 'Erro ao atualizar reserva.' });
@@ -1294,10 +1501,24 @@ app.delete('/api/friends/:targetId', async (req, res) => {
 
 function formatMatchForClient(doc, currentUserId) {
   const m = doc.toObject ? doc.toObject() : doc;
-  const participant = (m.participants || []).find(
+  const allParticipants = Array.isArray(m.participants) ? m.participants : [];
+  const participant = allParticipants.find(
     (p) => String(p.userId) === String(currentUserId)
   );
   const isHost = String(m.hostId) === String(currentUserId);
+
+  const approvedParticipants = allParticipants.filter((p) => {
+    if (p.requestStatus) return p.requestStatus === 'approved';
+    return !String(p.status || '').toLowerCase().includes('aguardando host');
+  });
+
+  const pendingParticipants = allParticipants.filter((p) => {
+    if (p.requestStatus) return p.requestStatus === 'pending';
+    return String(p.status || '').toLowerCase().includes('aguardando host');
+  });
+
+  const confirmedCount = Math.max(1, approvedParticipants.length);
+
   return {
     id: String(m._id),
     _id: String(m._id),
@@ -1310,17 +1531,32 @@ function formatMatchForClient(doc, currentUserId) {
     time: m.time,
     date: m.time,
     totalSlots: m.totalSlots || 14,
-    filledSlots: m.filledSlots || (m.participants?.length || 1),
-     playersCount: `${m.filledSlots || 1}/${m.totalSlots || 14}`,
+    filledSlots: confirmedCount,
+    playersCount: `${confirmedCount}/${m.totalSlots || 14}`,
+    pendingRequestsCount: pendingParticipants.length,
     pricePerPlayer: m.pricePerPlayer || 20,
     neededPositions: m.neededPositions || [],
     extras: m.extras || [],
+    isPublicLobby: Boolean(m.isPublicLobby),
     role: isHost ? 'Organizador (Host)' : participant?.role || 'Atleta Participante',
-    status: participant?.status || m.status || 'Confirmada',
+    status: isHost
+      ? m.status || 'Confirmada'
+      : participant?.status || m.status || 'Confirmada',
+    requestStatus: isHost
+      ? 'approved'
+      : participant?.requestStatus ||
+        (String(participant?.status || '').toLowerCase().includes('aguardando host')
+          ? 'pending'
+          : 'approved'),
     evaluated: Boolean(participant?.evaluated),
     evaluationStars: participant?.evaluationStars || null,
     isProHost: Boolean(m.isProHost),
     freeBallIncluded: Boolean(m.freeBallIncluded),
+    isInvited: Boolean(
+      currentUserId &&
+        Array.isArray(m.invitedUserIds) &&
+        m.invitedUserIds.map(String).includes(String(currentUserId))
+    ),
     host: {
       id: m.hostId,
       name: m.hostName,
@@ -1328,7 +1564,9 @@ function formatMatchForClient(doc, currentUserId) {
       isPro: Boolean(m.isProHost),
       avatar: m.hostAvatar || '',
     },
-    participants: m.participants || [],
+    participants: allParticipants,
+    approvedParticipants,
+    pendingParticipants,
   };
 }
 
@@ -1389,6 +1627,7 @@ app.post('/api/matches', async (req, res) => {
       isProHost: isPro,
       freeBallIncluded: isPro,
       title: payload.title || 'Partida Oficial',
+      bookingId: payload.bookingId || '',
       arenaId: payload.arenaId || '',
       arena: payload.arena || 'Arena Esportiva',
       neighborhood: payload.neighborhood || '',
@@ -1406,9 +1645,11 @@ app.post('/api/matches', async (req, res) => {
           userId: String(user._id),
           name: user.name,
           avatar: user.avatar,
-          ovr: user.ovr || 88,
+          ovr: user.ovr ?? 0,
           role: payload.role || 'Organizador (Host)',
           status: payload.status || 'Confirmada',
+          requestStatus: 'approved',
+          isPro,
           evaluated: false,
         },
       ],
@@ -1444,7 +1685,10 @@ app.post('/api/matches/:id/join', async (req, res) => {
 
     if (existingIdx >= 0 && String(match.hostId) !== userId) {
       match.participants.splice(existingIdx, 1);
-      match.filledSlots = Math.max(1, match.participants.length);
+      const approvedCount = match.participants.filter(
+        (p) => (p.requestStatus || 'approved') === 'approved'
+      ).length;
+      match.filledSlots = Math.max(1, approvedCount);
       await match.save();
       return res.json({
         joined: false,
@@ -1457,17 +1701,34 @@ app.post('/api/matches/:id/join', async (req, res) => {
         userId,
         name: user.name,
         avatar: user.avatar,
-        ovr: user.ovr || 88,
+        ovr: user.ovr ?? 0,
         role: isPro
           ? `⚡ Prioridade PRO na Fila (Host: ${match.hostName})`
           : `Solicitante (Host: ${match.hostName})`,
         status: isPro
-          ? 'Prioridade VIP Confirmada • Topo da Fila'
+          ? 'Solicitação PRO Enviada • Aguardando Host'
           : 'Solicitação Enviada • Aguardando Host',
+        requestStatus: 'pending',
+        isPro,
         evaluated: false,
       });
-      match.filledSlots = match.participants.length;
       await match.save();
+
+      if (match.hostId && String(match.hostId) !== userId) {
+        await Notification.create({
+          userId: String(match.hostId),
+          type: 'match_join_request',
+          title: 'Nova solicitação para entrar na sua partida',
+          message: `${user.name}${
+            isPro ? ' (Atleta PRO ⚡)' : ''
+          } solicitou entrada na partida "${match.title}" (${match.time}). Acesse a partida para aceitar ou recusar.`,
+          matchId: String(match._id),
+          arenaName: match.arena || '',
+          matchTitle: match.title || '',
+          dateLabel: match.time || '',
+          read: false,
+        }).catch(() => {});
+      }
     }
 
     return res.json({
@@ -1476,6 +1737,235 @@ app.post('/api/matches/:id/join', async (req, res) => {
     });
   } catch (err) {
     return res.status(500).json({ message: err.message || 'Erro ao participar da partida.' });
+  }
+});
+
+// GET /api/matches/:id - Busca detalhes completos de uma partida (arena, jogadores aprovados e solicitações pendentes)
+app.get('/api/matches/:id', async (req, res) => {
+  try {
+    const decoded = getAuthenticatedUserFromReq(req);
+    const currentUserId = decoded?.sub ? String(decoded.sub) : null;
+
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ message: 'ID da partida inválido.' });
+    }
+
+    const match = await Match.findById(req.params.id);
+    if (!match) {
+      return res.status(404).json({ message: 'Partida não encontrada.' });
+    }
+
+    return res.json({
+      match: formatMatchForClient(match, currentUserId),
+    });
+  } catch (err) {
+    return res.status(500).json({ message: err.message || 'Erro ao buscar detalhes da partida.' });
+  }
+});
+
+// POST /api/matches/:id/participants/:targetUserId/respond - Organizador (Host) aceita ou recusa solicitação de entrada na partida
+app.post('/api/matches/:id/participants/:targetUserId/respond', async (req, res) => {
+  try {
+    const decoded = getAuthenticatedUserFromReq(req);
+    if (!decoded || !decoded.sub) {
+      return res.status(401).json({ message: 'Não autorizado.' });
+    }
+
+    const currentUserId = String(decoded.sub);
+    const targetUserId = String(req.params.targetUserId);
+    const { action } = req.body || {}; // 'accept' | 'reject'
+
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ message: 'ID da partida inválido.' });
+    }
+
+    const match = await Match.findById(req.params.id);
+    if (!match) {
+      return res.status(404).json({ message: 'Partida não encontrada.' });
+    }
+
+    const isHostUser =
+      String(match.hostId) === currentUserId ||
+      match.participants.some(
+        (p) =>
+          String(p.userId) === currentUserId &&
+          String(p.role || '').toLowerCase().includes('organizador')
+      );
+
+    if (!isHostUser) {
+      return res.status(403).json({
+        message: 'Apenas o organizador (Host) da partida pode aceitar ou recusar jogadores.',
+      });
+    }
+
+    const partIdx = match.participants.findIndex(
+      (p) =>
+        String(p.userId) === targetUserId ||
+        String(p._id) === targetUserId
+    );
+    if (partIdx < 0) {
+      return res.status(404).json({ message: 'Solicitação de jogador não encontrada.' });
+    }
+
+    if (action === 'accept') {
+      const acceptedName = match.participants[partIdx].name;
+      match.participants[partIdx].requestStatus = 'approved';
+      match.participants[partIdx].role = 'Atleta Confirmado';
+      match.participants[partIdx].status = 'Entrada Aprovada pelo Host';
+      match.markModified('participants');
+
+      const approvedCount = match.participants.filter(
+        (p) => (p.requestStatus || 'approved') === 'approved'
+      ).length;
+      match.filledSlots = Math.max(1, approvedCount);
+      await match.save();
+
+      if (mongoose.Types.ObjectId.isValid(targetUserId)) {
+        await User.findByIdAndUpdate(targetUserId, { $inc: { matchesCount: 1 } }).catch(() => {});
+      }
+
+      return res.json({
+        message: `${acceptedName} foi aceito na partida!`,
+        match: formatMatchForClient(match, currentUserId),
+      });
+    } else {
+      const removedName = match.participants[partIdx].name;
+      match.participants.splice(partIdx, 1);
+      match.markModified('participants');
+      const approvedCount = match.participants.filter(
+        (p) => (p.requestStatus || 'approved') === 'approved'
+      ).length;
+      match.filledSlots = Math.max(1, approvedCount);
+      await match.save();
+
+      return res.json({
+        message: `Solicitação de ${removedName} recusada.`,
+        match: formatMatchForClient(match, currentUserId),
+      });
+    }
+  } catch (err) {
+    return res.status(500).json({
+      message: err.message || 'Erro ao responder solicitação da partida.',
+    });
+  }
+});
+
+// POST /api/matches/:id/invite/respond - Atleta convidado aceita ou recusa entrar na partida
+app.post('/api/matches/:id/invite/respond', async (req, res) => {
+  try {
+    const decoded = getAuthenticatedUserFromReq(req);
+    if (!decoded || !decoded.sub) {
+      return res.status(401).json({ message: 'Não autorizado.' });
+    }
+
+    const userId = String(decoded.sub);
+    const { action } = req.body || {}; // 'accept' | 'decline'
+    const [user, match] = await Promise.all([
+      User.findById(userId),
+      Match.findById(req.params.id),
+    ]);
+
+    if (!user || !match) {
+      return res.status(404).json({ message: 'Partida ou usuário não encontrado.' });
+    }
+
+    match.invitedUserIds = (match.invitedUserIds || []).filter(
+      (id) => String(id) !== userId
+    );
+
+    if (action === 'accept') {
+      const existingIdx = match.participants.findIndex(
+        (p) => String(p.userId) === userId
+      );
+      const isPro = Boolean(user.isPro && user.proStatus === 'active');
+
+      if (existingIdx >= 0) {
+        match.participants[existingIdx].requestStatus = 'approved';
+        match.participants[existingIdx].role = 'Atleta Confirmado (Convidado)';
+        match.participants[existingIdx].status = 'Confirmada • Convite Aceito';
+      } else {
+        match.participants.push({
+          userId,
+          name: user.name,
+          avatar: user.avatar,
+          ovr: user.ovr ?? 0,
+          role: 'Atleta Confirmado (Convidado)',
+          status: 'Confirmada • Convite Aceito',
+          requestStatus: 'approved',
+          isPro,
+          evaluated: false,
+        });
+      }
+
+      match.markModified('participants');
+      const approvedCount = match.participants.filter(
+        (p) => (p.requestStatus || 'approved') === 'approved'
+      ).length;
+      match.filledSlots = Math.max(1, approvedCount);
+      await match.save();
+
+      await User.findByIdAndUpdate(userId, { $inc: { matchesCount: 1 } }).catch(() => {});
+
+      return res.json({
+        accepted: true,
+        message: 'Convite aceito! Você já está confirmado nesta partida.',
+        match: formatMatchForClient(match, userId),
+      });
+    }
+
+    await match.save();
+    return res.json({
+      accepted: false,
+      message: 'Você recusou o convite para esta partida.',
+      match: formatMatchForClient(match, userId),
+    });
+  } catch (err) {
+    return res.status(500).json({ message: err.message || 'Erro ao responder convite.' });
+  }
+});
+
+// POST /api/matches/:id/invite/:targetUserId - Convida um amigo para a partida enviando notificação
+app.post('/api/matches/:id/invite/:targetUserId', async (req, res) => {
+  try {
+    const decoded = getAuthenticatedUserFromReq(req);
+    if (!decoded || !decoded.sub) {
+      return res.status(401).json({ message: 'Não autorizado.' });
+    }
+
+    const sender = await User.findById(decoded.sub);
+    const match = await Match.findById(req.params.id);
+    const targetUserId = String(req.params.targetUserId);
+
+    if (!sender || !match) {
+      return res.status(404).json({ message: 'Partida ou usuário não encontrado.' });
+    }
+
+    if (!Array.isArray(match.invitedUserIds)) {
+      match.invitedUserIds = [];
+    }
+    if (!match.invitedUserIds.map(String).includes(targetUserId)) {
+      match.invitedUserIds.push(targetUserId);
+      await match.save();
+    }
+
+    await Notification.create({
+      userId: targetUserId,
+      type: 'match_invite',
+      title: `${sender.name} convidou você para uma partida!`,
+      message: `Você foi convocado para jogar "${match.title}" em ${match.arena} (${match.time}). Valor: R$ ${match.pricePerPlayer || 20},00 por atleta.`,
+      matchId: String(match._id),
+      arenaName: match.arena || '',
+      matchTitle: match.title || '',
+      dateLabel: match.time || '',
+      read: false,
+    });
+
+    return res.json({
+      ok: true,
+      message: 'Convite enviado para o seu amigo!',
+    });
+  } catch (err) {
+    return res.status(500).json({ message: err.message || 'Erro ao enviar convite.' });
   }
 });
 
@@ -1563,6 +2053,7 @@ app.post('/api/evaluations', async (req, res) => {
         arena.reviewsCount = newCount;
         arena.rating = newRating;
         await arena.save();
+        invalidateServerArenasCache();
 
         updatedArena = {
           _id: String(arena._id),
@@ -1630,6 +2121,76 @@ app.post('/api/evaluations', async (req, res) => {
     });
   } catch (err) {
     return res.status(500).json({ message: err.message || 'Erro ao computar avaliação.' });
+  }
+});
+
+// ============================================================================
+// ENDPOINTS DE NOTIFICAÇÕES DO USUÁRIO (CANCELAMENTOS, REEMBOLSOS, ETC.)
+// ============================================================================
+
+app.get('/api/notifications', async (req, res) => {
+  try {
+    const decoded = getAuthenticatedUserFromReq(req);
+    if (!decoded || !decoded.sub) {
+      return res.status(401).json({ message: 'Não autorizado.' });
+    }
+
+    const userId = String(decoded.sub);
+    const list = await Notification.find({ userId })
+      .sort({ createdAt: -1 })
+      .limit(50)
+      .lean();
+
+    const notifications = list.map((n) => ({
+      ...n,
+      id: String(n._id),
+    }));
+    const unreadCount = notifications.filter((n) => !n.read).length;
+
+    return res.json({ notifications, unreadCount });
+  } catch (err) {
+    return res.status(500).json({ message: err.message || 'Erro ao buscar notificações.' });
+  }
+});
+
+app.patch('/api/notifications/:id/read', async (req, res) => {
+  try {
+    const decoded = getAuthenticatedUserFromReq(req);
+    if (!decoded || !decoded.sub) {
+      return res.status(401).json({ message: 'Não autorizado.' });
+    }
+
+    const notif = await Notification.findOneAndUpdate(
+      { _id: req.params.id, userId: String(decoded.sub) },
+      { read: true },
+      { new: true }
+    );
+
+    if (!notif) {
+      return res.status(404).json({ message: 'Notificação não encontrada.' });
+    }
+
+    return res.json({ notification: { ...notif.toObject(), id: String(notif._id) } });
+  } catch (err) {
+    return res.status(500).json({ message: err.message || 'Erro ao marcar notificação.' });
+  }
+});
+
+app.post('/api/notifications/read-all', async (req, res) => {
+  try {
+    const decoded = getAuthenticatedUserFromReq(req);
+    if (!decoded || !decoded.sub) {
+      return res.status(401).json({ message: 'Não autorizado.' });
+    }
+
+    await Notification.updateMany(
+      { userId: String(decoded.sub), read: false },
+      { $set: { read: true } }
+    );
+
+    return res.json({ ok: true });
+  } catch (err) {
+    return res.status(500).json({ message: err.message || 'Erro ao marcar notificações como lidas.' });
   }
 });
 

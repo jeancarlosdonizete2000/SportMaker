@@ -1,4 +1,5 @@
 import { MONGO_CONFIG } from './mongoClient';
+import { clientCache } from '../utils/clientCache';
 
 const STORAGE_USER_KEY = 'sportmaker_user';
 const STORAGE_TOKEN_KEY = 'sportmaker_token';
@@ -38,6 +39,7 @@ export const authService = {
   clearSession() {
     localStorage.removeItem(STORAGE_USER_KEY);
     localStorage.removeItem(STORAGE_TOKEN_KEY);
+    clientCache.clearAll();
   },
 
   /**

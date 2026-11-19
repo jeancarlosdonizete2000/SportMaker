@@ -1,5 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext';
+import { isEvaluationUnlocked } from '../../utils/matchTimeUtils';
 import {
   Calendar,
   MapPin,
@@ -10,6 +12,8 @@ import {
   Clock,
   XCircle,
   Star,
+  Bell,
+  ChevronRight,
 } from 'lucide-react';
 
 export default function MyMatchesTab({
@@ -18,6 +22,7 @@ export default function MyMatchesTab({
   onCancelMatch,
 }) {
   const navigate = useNavigate();
+  const { user } = useAuth();
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -63,22 +68,49 @@ export default function MyMatchesTab({
       ) : (
       <div className="space-y-4">
         {myMatches.map((match) => {
-          const isPending = match.status.toLowerCase().includes('solicita');
+          const statusLower = (match.status || '').toLowerCase();
+          const isPending = statusLower.includes('solicita');
+          const isCancelled = statusLower.includes('cancelad');
+          const isHost =
+            (user?._id && String(match.hostId) === String(user._id)) ||
+            String(match.role || '').toLowerCase().includes('organizador') ||
+            String(match.role || '').toLowerCase().includes('responsável');
+          const pendingRequestsCount = isHost
+            ? match.pendingRequestsCount ??
+              (match.pendingParticipants ? match.pendingParticipants.length : 0)
+            : 0;
+
           return (
             <div
               key={match.id}
-              className="glass-card rounded-3xl p-5 sm:p-6 border border-white/10 flex flex-col lg:flex-row lg:items-center justify-between gap-5"
+              onClick={() => navigate(`/app/partida/${match.id}`)}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  navigate(`/app/partida/${match.id}`);
+                }
+              }}
+              className={`glass-card rounded-3xl p-5 sm:p-6 border transition-all cursor-pointer group flex flex-col lg:flex-row lg:items-center justify-between gap-5 ${
+                isCancelled
+                  ? 'border-red-500/40 bg-red-500/5 hover:border-red-400/60'
+                  : 'border-white/10 hover:border-neon/40'
+              }`}
             >
               <div className="space-y-2.5">
                 <div className="flex flex-wrap items-center gap-2">
                   <span
                     className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1.5 ${
-                      isPending
+                      isCancelled
+                        ? 'bg-red-500/20 text-red-300 border border-red-500/40'
+                        : isPending
                         ? 'bg-amber-400/15 text-amber-300 border border-amber-400/30'
                         : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
                     }`}
                   >
-                    {isPending ? (
+                    {isCancelled ? (
+                      <XCircle className="w-3.5 h-3.5" />
+                    ) : isPending ? (
                       <Clock className="w-3.5 h-3.5" />
                     ) : (
                       <CheckCircle2 className="w-3.5 h-3.5" />
@@ -93,10 +125,21 @@ export default function MyMatchesTab({
                   <span className="text-xs text-slate-300 font-bold flex items-center gap-1">
                     <Clock className="w-3.5 h-3.5 text-neon" /> {match.date}
                   </span>
+
+                  {pendingRequestsCount > 0 && (
+                    <span className="px-3 py-1 rounded-full bg-amber-400 text-dark-950 text-xs font-display font-black flex items-center gap-1.5 shadow-lg animate-pulse">
+                      <Bell className="w-3.5 h-3.5 fill-dark-950" />
+                      {pendingRequestsCount}{' '}
+                      {pendingRequestsCount === 1
+                        ? 'solicitação para aceitar'
+                        : 'solicitações para aceitar'}
+                    </span>
+                  )}
                 </div>
 
-                <h3 className="font-display font-extrabold text-xl text-white">
-                  {match.title}
+                <h3 className="font-display font-extrabold text-xl text-white group-hover:text-neon transition-colors flex items-center gap-2">
+                  <span>{match.title}</span>
+                  <ChevronRight className="w-5 h-5 text-slate-500 group-hover:text-neon group-hover:translate-x-0.5 transition-all" />
                 </h3>
 
                 <p className="text-xs text-slate-400 flex items-center gap-1.5">
@@ -107,7 +150,7 @@ export default function MyMatchesTab({
                 {match.extras && match.extras.length > 0 && (
                   <div className="flex flex-wrap items-center gap-2 pt-1">
                     <span className="text-[11px] text-slate-400 flex items-center gap-1">
-                      <ShoppingBag className="w-3.5 h-3.5 text-neon" /> Produtos inclusos:
+                      <ShoppingBag className="w-3.5 h-3.5 text-neon" /> Detalhes / Extras:
                     </span>
                     {match.extras.map((item) => (
                       <span
@@ -133,25 +176,53 @@ export default function MyMatchesTab({
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
-                  {!isPending && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      navigate(`/app/partida/${match.id}`);
+                    }}
+                    className={`px-3.5 py-2 rounded-xl text-xs font-display font-extrabold transition-all flex items-center gap-1.5 ${
+                      pendingRequestsCount > 0
+                        ? 'bg-neon text-dark-950 shadow-neon hover:bg-neon-400'
+                        : 'bg-white/10 hover:bg-white/15 text-white border border-white/15'
+                    }`}
+                  >
+                    <Users className="w-3.5 h-3.5" />
+                    <span>
+                      {pendingRequestsCount > 0
+                        ? `Gerenciar Solicitações (${pendingRequestsCount})`
+                        : 'Ver Detalhes e Jogadores'}
+                    </span>
+                  </button>
+
+                  {!isPending && !isCancelled && (
                     match.evaluated ? (
                       <span className="px-3.5 py-2 rounded-xl bg-amber-400/15 border border-amber-400/40 text-amber-300 text-xs font-bold flex items-center gap-1.5">
                         <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
                         Avaliada ({match.evaluationStars || 5}★)
                       </span>
-                    ) : (
+                    ) : isEvaluationUnlocked(match) ? (
                       <button
-                        onClick={() => navigate(`/app/avaliar/${match.id}`)}
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate(`/app/avaliar/${match.id}`);
+                        }}
                         className="px-4 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-dark-950 text-xs font-display font-black transition-all flex items-center gap-1.5"
                       >
                         <Star className="w-3.5 h-3.5 fill-dark-950" />
                         <span>Avalie como foi sua partida</span>
                       </button>
-                    )
+                    ) : null
                   )}
 
                   <button
-                    onClick={() => onCancelMatch(match.id)}
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onCancelMatch(match.id);
+                    }}
                     className="px-3.5 py-2 rounded-xl bg-white/5 hover:bg-red-500/20 text-slate-300 hover:text-red-300 border border-white/10 text-xs font-bold transition-all flex items-center gap-1.5"
                   >
                     <XCircle className="w-3.5 h-3.5" />
