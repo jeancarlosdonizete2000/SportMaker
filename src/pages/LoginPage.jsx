@@ -14,9 +14,35 @@ import {
   AlertCircle,
   Database,
   CheckCircle2,
+  Eye,
+  EyeOff,
+  Check,
+  X,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { SPORTS_CATEGORIES } from '../data/mockData';
+
+function evaluatePasswordStrength(pwd = '') {
+  const checks = {
+    minLength: pwd.length >= 8,
+    hasUpper: /[A-Z]/.test(pwd),
+    hasLower: /[a-z]/.test(pwd),
+    hasNumber: /[0-9]/.test(pwd),
+    hasSpecial: /[^A-Za-z0-9]/.test(pwd),
+  };
+  const score = Object.values(checks).filter(Boolean).length;
+
+  if (!pwd) {
+    return { level: 'empty', label: '', score: 0, checks };
+  }
+  if (pwd.length < 6 || score <= 2) {
+    return { level: 'weak', label: 'Senha Fraca', score: 1, checks };
+  }
+  if (score === 3) {
+    return { level: 'medium', label: 'Senha Média', score: 2, checks };
+  }
+  return { level: 'strong', label: 'Senha Forte', score: 3, checks };
+}
 
 export default function LoginPage({
   initialRole = 'player',
@@ -24,9 +50,11 @@ export default function LoginPage({
   onSuccess,
   onBack,
 }) {
-  const { login, register } = useAuth();
+  const { login, register, loginWithGoogle } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const [verificationNotice, setVerificationNotice] = useState(null);
 
   // 'player' (Atleta / Usuário) | 'owner' (Proprietário de Arena)
   const [role, setRole] = useState(initialRole);
@@ -50,12 +78,20 @@ export default function LoginPage({
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [arenaName, setArenaName] = useState('');
   const [cnpj, setCnpj] = useState('');
   const [favoriteSport, setFavoriteSport] = useState('society');
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+
+  const passwordStrength = evaluatePasswordStrength(password);
+  const isEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim());
+  const passwordsMatch =
+    confirmPassword.length > 0 && password === confirmPassword;
 
   useEffect(() => {
     if (initialRole) {
@@ -72,6 +108,11 @@ export default function LoginPage({
       return;
     }
 
+    if (!isEmailValid) {
+      setError('Informe um endereço de e-mail válido (ex: voce@email.com).');
+      return;
+    }
+
     if (mode === 'register' && !name.trim()) {
       setError('Informe seu nome completo.');
       return;
@@ -82,13 +123,30 @@ export default function LoginPage({
       return;
     }
 
+    if (mode === 'register') {
+      if (passwordStrength.level === 'weak') {
+        setError(
+          'Sua senha está fraca. Use pelo menos 8 caracteres combinando letras maiúsculas, números ou símbolos.'
+        );
+        return;
+      }
+      if (!confirmPassword) {
+        setError('Repita sua senha para confirmar.');
+        return;
+      }
+      if (password !== confirmPassword) {
+        setError('As senhas digitadas não coincidem.');
+        return;
+      }
+    }
+
     setSubmitting(true);
     try {
-      let resultUser;
       if (mode === 'login') {
-        resultUser = await login({ email, password, role });
+        const result = await login({ email, password, role });
+        if (onSuccess) onSuccess(result?.user || result);
       } else {
-        resultUser = await register({
+        const result = await register({
           name,
           email,
           password,
@@ -97,13 +155,81 @@ export default function LoginPage({
           cnpj: role === 'owner' ? cnpj : undefined,
           favoriteSport: role === 'player' ? favoriteSport : undefined,
         });
+        setVerificationNotice({
+          email: email.trim(),
+          sent: Boolean(result?.emailVerificationSent),
+          devUrl: result?.devVerificationUrl || '',
+          user: result?.user || result,
+        });
       }
-      if (onSuccess) onSuccess(resultUser);
     } catch (err) {
       setError(err.message || 'Falha na autenticação.');
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleGoogleSignIn = () => {
+    setError('');
+    const clientId = (import.meta.env.VITE_GOOGLE_CLIENT_ID || '').trim();
+    if (!clientId) {
+      setError(
+        'Configure VITE_GOOGLE_CLIENT_ID no arquivo .env com seu Client ID do Google Cloud Console para ativar o Login com Google.'
+      );
+      return;
+    }
+
+    const initAndPrompt = () => {
+      if (!window.google?.accounts?.id) {
+        setError('Não foi possível carregar o serviço do Google Sign-In.');
+        return;
+      }
+      setGoogleLoading(true);
+      window.google.accounts.id.initialize({
+        client_id: clientId,
+        callback: async (response) => {
+          try {
+            const data = await loginWithGoogle({
+              credential: response.credential,
+              role,
+            });
+            if (onSuccess) onSuccess(data?.user || data);
+          } catch (err) {
+            setError(err.message || 'Falha ao autenticar com o Google.');
+          } finally {
+            setGoogleLoading(false);
+          }
+        },
+      });
+      window.google.accounts.id.prompt((notification) => {
+        if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+          setGoogleLoading(false);
+        }
+      });
+    };
+
+    if (window.google?.accounts?.id) {
+      initAndPrompt();
+      return;
+    }
+
+    const existingScript = document.getElementById('google-gsi-script');
+    if (existingScript) {
+      existingScript.addEventListener('load', initAndPrompt, { once: true });
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.id = 'google-gsi-script';
+    script.src = 'https://accounts.google.com/gsi/client';
+    script.async = true;
+    script.defer = true;
+    script.onload = initAndPrompt;
+    script.onerror = () => {
+      setError('Erro ao carregar o script do Google.');
+      setGoogleLoading(false);
+    };
+    document.body.appendChild(script);
   };
 
   return (
@@ -277,6 +403,72 @@ export default function LoginPage({
               </div>
             )}
 
+            {verificationNotice && (
+              <div className="p-4 rounded-2xl bg-emerald-500/15 border border-emerald-400/40 space-y-2.5">
+                <p className="text-xs sm:text-sm font-bold text-emerald-300 flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 shrink-0" />
+                  Conta criada! Enviamos um link de confirmação para {verificationNotice.email}.
+                </p>
+                <p className="text-[11px] text-slate-300">
+                  Verifique sua caixa de entrada (ou spam) e clique no link para confirmar seu e-mail.
+                </p>
+                {verificationNotice.devUrl && (
+                  <p className="text-[11px] text-amber-300 break-all">
+                    Ambiente local (SMTP não configurado):{' '}
+                    <a
+                      href={verificationNotice.devUrl}
+                      className="underline font-bold text-neon"
+                    >
+                      Clique aqui para confirmar agora
+                    </a>
+                  </p>
+                )}
+                <button
+                  type="button"
+                  onClick={() => onSuccess && onSuccess(verificationNotice.user)}
+                  className="px-4 py-2 rounded-xl bg-neon text-dark-950 font-display font-extrabold text-xs"
+                >
+                  Continuar para o Sport Maker →
+                </button>
+              </div>
+            )}
+
+            {/* Botão Continuar com Google */}
+            <button
+              type="button"
+              disabled={googleLoading}
+              onClick={handleGoogleSignIn}
+              className="w-full py-3 px-4 rounded-xl bg-white hover:bg-slate-100 disabled:opacity-60 text-slate-900 font-display font-bold text-xs sm:text-sm transition-all flex items-center justify-center gap-2.5 shadow-md"
+            >
+              <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
+                <path
+                  fill="#4285F4"
+                  d="M23.745 12.27c0-.79-.07-1.54-.19-2.27h-11.3v4.51h6.47c-.29 1.48-1.14 2.73-2.4 3.58v3h3.86c2.26-2.09 3.56-5.17 3.56-8.82z"
+                />
+                <path
+                  fill="#34A853"
+                  d="M12.255 24c3.24 0 5.95-1.08 7.93-2.91l-3.86-3c-1.08.72-2.45 1.16-4.07 1.16-3.13 0-5.78-2.11-6.73-4.96h-3.98v3.09C3.515 21.3 7.565 24 12.255 24z"
+                />
+                <path
+                  fill="#FBBC05"
+                  d="M5.525 14.29c-.25-.72-.38-1.49-.38-2.29s.14-1.57.38-2.29V6.62h-3.98a11.86 11.86 0 000 10.76l3.98-3.09z"
+                />
+                <path
+                  fill="#EA4335"
+                  d="M12.255 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C18.205 1.19 15.495 0 12.255 0c-4.69 0-8.74 2.7-10.71 6.62l3.98 3.09c.95-2.85 3.6-4.96 6.73-4.96z"
+                />
+              </svg>
+              <span>
+                {googleLoading ? 'Conectando ao Google...' : 'Continuar com Google'}
+              </span>
+            </button>
+
+            <div className="flex items-center gap-3 text-[11px] text-slate-500">
+              <div className="h-[1px] flex-1 bg-white/10" />
+              <span>ou use seu e-mail</span>
+              <div className="h-[1px] flex-1 bg-white/10" />
+            </div>
+
             {/* Auth Form */}
             <form onSubmit={handleSubmit} className="space-y-4">
               {mode === 'register' && (
@@ -360,7 +552,15 @@ export default function LoginPage({
                 <label className="block text-xs font-semibold text-slate-300 mb-1.5">
                   E-mail de Acesso
                 </label>
-                <div className="flex items-center gap-2.5 bg-dark-950 border border-white/10 rounded-xl px-3.5 py-3 focus-within:border-neon">
+                <div
+                  className={`flex items-center gap-2.5 bg-dark-950 border rounded-xl px-3.5 py-3 transition-colors ${
+                    email.trim().length > 0
+                      ? isEmailValid
+                        ? 'border-emerald-400/60'
+                        : 'border-red-400/60'
+                      : 'border-white/10 focus-within:border-neon'
+                  }`}
+                >
                   <Mail className="w-4 h-4 text-slate-400" />
                   <input
                     type="email"
@@ -371,7 +571,18 @@ export default function LoginPage({
                     }
                     className="w-full bg-transparent text-sm text-white placeholder-slate-500 focus:outline-none"
                   />
+                  {email.trim().length > 0 &&
+                    (isEmailValid ? (
+                      <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+                    ) : (
+                      <X className="w-4 h-4 text-red-400 shrink-0" />
+                    ))}
                 </div>
+                {email.trim().length > 0 && !isEmailValid && (
+                  <p className="text-[11px] text-red-400 font-semibold mt-1">
+                    Digite um e-mail válido (ex: voce@email.com).
+                  </p>
+                )}
               </div>
 
               <div>
@@ -381,14 +592,147 @@ export default function LoginPage({
                 <div className="flex items-center gap-2.5 bg-dark-950 border border-white/10 rounded-xl px-3.5 py-3 focus-within:border-neon">
                   <Lock className="w-4 h-4 text-slate-400" />
                   <input
-                    type="password"
+                    type={showPassword ? 'text' : 'password'}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
                     className="w-full bg-transparent text-sm text-white placeholder-slate-500 focus:outline-none"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((prev) => !prev)}
+                    className="text-slate-400 hover:text-white transition-colors"
+                    aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'}
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
                 </div>
+
+                {/* Indicador de Força da Senha (Fraca / Média / Forte) no Cadastro */}
+                {mode === 'register' && password.length > 0 && (
+                  <div className="mt-2.5 space-y-2">
+                    <div className="flex items-center justify-between text-[11px] font-bold">
+                      <span className="text-slate-400">Força da senha:</span>
+                      <span
+                        className={
+                          passwordStrength.level === 'strong'
+                            ? 'text-emerald-400'
+                            : passwordStrength.level === 'medium'
+                              ? 'text-amber-400'
+                              : 'text-red-400'
+                        }
+                      >
+                        {passwordStrength.label}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {[1, 2, 3].map((bar) => (
+                        <div
+                          key={bar}
+                          className={`h-1.5 rounded-full transition-all ${
+                            bar <= passwordStrength.score
+                              ? passwordStrength.level === 'strong'
+                                ? 'bg-emerald-400'
+                                : passwordStrength.level === 'medium'
+                                  ? 'bg-amber-400'
+                                  : 'bg-red-500'
+                              : 'bg-white/10'
+                          }`}
+                        />
+                      ))}
+                    </div>
+
+                    <div className="flex flex-wrap gap-1.5 text-[10px] font-semibold">
+                      <span
+                        className={`px-2 py-0.5 rounded-md border ${
+                          passwordStrength.checks.minLength
+                            ? 'bg-emerald-500/15 border-emerald-400/40 text-emerald-300'
+                            : 'bg-white/5 border-white/10 text-slate-400'
+                        }`}
+                      >
+                        8+ caracteres
+                      </span>
+                      <span
+                        className={`px-2 py-0.5 rounded-md border ${
+                          passwordStrength.checks.hasUpper
+                            ? 'bg-emerald-500/15 border-emerald-400/40 text-emerald-300'
+                            : 'bg-white/5 border-white/10 text-slate-400'
+                        }`}
+                      >
+                        Letra maiúscula
+                      </span>
+                      <span
+                        className={`px-2 py-0.5 rounded-md border ${
+                          passwordStrength.checks.hasNumber
+                            ? 'bg-emerald-500/15 border-emerald-400/40 text-emerald-300'
+                            : 'bg-white/5 border-white/10 text-slate-400'
+                        }`}
+                      >
+                        Número
+                      </span>
+                      <span
+                        className={`px-2 py-0.5 rounded-md border ${
+                          passwordStrength.checks.hasSpecial
+                            ? 'bg-emerald-500/15 border-emerald-400/40 text-emerald-300'
+                            : 'bg-white/5 border-white/10 text-slate-400'
+                        }`}
+                      >
+                        Símbolo (!@#)
+                      </span>
+                    </div>
+                  </div>
+                )}
               </div>
+
+              {mode === 'register' && (
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                    Repetir Senha
+                  </label>
+                  <div
+                    className={`flex items-center gap-2.5 bg-dark-950 border rounded-xl px-3.5 py-3 transition-colors ${
+                      confirmPassword.length > 0
+                        ? passwordsMatch
+                          ? 'border-emerald-400/60'
+                          : 'border-red-400/60'
+                        : 'border-white/10 focus-within:border-neon'
+                    }`}
+                  >
+                    <Lock className="w-4 h-4 text-slate-400" />
+                    <input
+                      type={showConfirmPassword ? 'text' : 'password'}
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      placeholder="Digite sua senha novamente"
+                      className="w-full bg-transparent text-sm text-white placeholder-slate-500 focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPassword((prev) => !prev)}
+                      className="text-slate-400 hover:text-white transition-colors"
+                      aria-label={showConfirmPassword ? 'Ocultar senha' : 'Mostrar senha'}
+                    >
+                      {showConfirmPassword ? (
+                        <EyeOff className="w-4 h-4" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
+                    </button>
+                  </div>
+                  {confirmPassword.length > 0 && (
+                    <p
+                      className={`text-[11px] font-semibold mt-1 ${
+                        passwordsMatch ? 'text-emerald-400' : 'text-red-400'
+                      }`}
+                    >
+                      {passwordsMatch
+                        ? 'As senhas conferem ✓'
+                        : 'As senhas não coincidem.'}
+                    </p>
+                  )}
+                </div>
+              )}
 
               <button
                 type="submit"

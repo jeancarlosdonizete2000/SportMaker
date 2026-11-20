@@ -10,6 +10,11 @@ import {
   Lock,
   User,
   Trash2,
+  Edit3,
+  Grid,
+  Settings,
+  X,
+  Check,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { CARD_THEMES } from '../../data/mockData';
@@ -29,6 +34,68 @@ const PRO_EXCLUSIVE_TAGS = [
   '⚡ Prioridade VIP de Fila',
   '🏆 Organizador de Copas PRO',
 ];
+
+/**
+ * Miniatura limpa do próprio Player Card (sem textos/nomes) para a grade de coleção
+ */
+function MiniCleanPlayerCardIcon({ theme, isEquipped, isLocked }) {
+  const shieldBorderGradient =
+    theme.id === 'emerald-pro'
+      ? 'bg-gradient-to-b from-emerald-300 via-emerald-500 to-teal-900'
+      : theme.id === 'silver-slate'
+        ? 'bg-gradient-to-b from-slate-200 via-slate-400 to-slate-800'
+        : 'bg-gradient-to-b from-neon via-lime-500 to-emerald-900';
+
+  return (
+    <div className="relative flex items-center justify-center group">
+      {theme.bgImage ? (
+        <img
+          src={theme.bgImage}
+          alt={theme.name}
+          className={`w-20 h-28 sm:w-24 sm:h-32 object-contain drop-shadow-[0_8px_16px_rgba(0,0,0,0.65)] transition-transform duration-300 ${
+            isEquipped ? 'scale-105' : 'group-hover:scale-105'
+          } ${isLocked ? 'grayscale opacity-55' : ''}`}
+        />
+      ) : (
+        <div
+          className={`w-[72px] h-[102px] sm:w-[86px] sm:h-[120px] fc-card-shield p-[2px] transition-transform duration-300 ${shieldBorderGradient} ${
+            isEquipped ? 'scale-105' : 'group-hover:scale-105'
+          } ${isLocked ? 'grayscale opacity-55' : ''}`}
+        >
+          <div
+            className={`w-full h-full fc-card-shield relative overflow-hidden bg-gradient-to-b ${theme.gradient}`}
+          >
+            <div className="absolute inset-0 bg-grid-pattern opacity-40" />
+            <div className="absolute inset-x-3 top-1/2 h-[1px] bg-white/15" />
+          </div>
+        </div>
+      )}
+
+      {/* Tag PRO nos cards que são exclusivos PRO */}
+      {theme.isPremium && (
+        <span className="absolute -bottom-1.5 px-2 py-0.5 rounded-full bg-amber-400 text-dark-950 text-[9px] font-display font-black uppercase tracking-wider flex items-center gap-0.5 shadow-[0_2px_10px_rgba(251,191,36,0.5)] ring-2 ring-dark-950">
+          <Crown className="w-2.5 h-2.5" /> PRO
+        </span>
+      )}
+
+      {/* Indicador de Card Equipado */}
+      {isEquipped && (
+        <span className="absolute -top-1.5 -right-1.5 w-6 h-6 rounded-full bg-neon text-dark-950 flex items-center justify-center shadow-neon ring-2 ring-dark-950">
+          <Check className="w-3.5 h-3.5 stroke-[3]" />
+        </span>
+      )}
+
+      {/* Indicador de Card PRO Bloqueado */}
+      {isLocked && (
+        <span className="absolute inset-0 flex items-center justify-center">
+          <span className="w-8 h-8 rounded-full bg-dark-950/85 border border-amber-400/50 text-amber-400 flex items-center justify-center shadow-lg">
+            <Lock className="w-4 h-4" />
+          </span>
+        </span>
+      )}
+    </div>
+  );
+}
 
 export default function ProfileTab() {
   const { user, isPro, updateUserProfile } = useAuth();
@@ -64,6 +131,7 @@ export default function ProfileTab() {
       setActiveThemeIndex(idx);
     }
   }, [user?.cardThemeId]);
+
   const [customTag, setCustomTag] = useState(user?.customTag || STANDARD_TAGS[0]);
   const [positionRole, setPositionRole] = useState(
     user?.positionRole || 'Atleta Sport Maker'
@@ -71,6 +139,7 @@ export default function ProfileTab() {
   const [saving, setSaving] = useState(false);
   const [removingBg, setRemovingBg] = useState(false);
   const [savedBanner, setSavedBanner] = useState(false);
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
 
   const compressImageBlobToDataUrl = (blobOrFile) =>
     new Promise((resolve) => {
@@ -170,317 +239,477 @@ export default function ProfileTab() {
   };
 
   const currentTheme = CARD_THEMES[activeThemeIndex];
+  const unlockedCards = CARD_THEMES.filter((t) => !t.isPremium || isPro);
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-      {/* Left Customization Controls */}
-      <div className="lg:col-span-7 space-y-6">
-        {/* Atalho Mobile / Rápido para Seja PRO */}
-        <div className="md:hidden glass-card rounded-2xl p-4 border border-amber-400/30 bg-amber-400/10 flex items-center justify-between gap-3">
-          <div>
-            <p className="text-xs font-extrabold text-amber-300 flex items-center gap-1.5">
-              <Crown className="w-4 h-4" /> {isPro ? 'Sport Maker PRO Ativo' : 'Assine o Sport Maker PRO'}
-            </p>
-            <p className="text-[11px] text-slate-300">
-              {isPro ? 'Gerencie seus benefícios e campeonatos.' : 'Prioridade de fila, bola grátis e descontos.'}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => navigate('/app/seja-pro')}
-            className="px-4 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-dark-950 font-display font-black text-xs shrink-0"
-          >
-            {isPro ? 'Ver PRO' : 'Seja PRO'}
-          </button>
-        </div>
-        <form
-          onSubmit={handleSaveProfile}
-          className="glass-card rounded-3xl p-6 border border-white/15 space-y-6"
-        >
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-4">
-            <div>
-              <span className="text-xs font-bold uppercase tracking-wider text-neon flex items-center gap-1.5">
-                <Trophy className="w-4 h-4" /> Meu Player Card Oficial
-              </span>
-              <h2 className="font-display font-black text-2xl sm:text-3xl text-white mt-1">
-                Personalizar Foto, Apelido & Card
-              </h2>
-            </div>
-
-            {!isPro ? (
-              <button
-                type="button"
-                onClick={() => navigate('/app/seja-pro')}
-                className="px-3.5 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-dark-950 font-display font-extrabold text-xs flex items-center gap-1.5 shadow-[0_0_20px_rgba(251,191,36,0.4)]"
-              >
-                <Crown className="w-4 h-4" />
-                <span>Seja PRO</span>
-              </button>
-            ) : (
-              <span className="px-3 py-1.5 rounded-xl bg-amber-400/20 border border-amber-400/40 text-amber-300 text-xs font-bold flex items-center gap-1.5">
-                <Crown className="w-4 h-4 text-amber-400" /> Assinante PRO Ativo
-              </span>
-            )}
-          </div>
-
-          {savedBanner && (
-            <div className="p-3.5 rounded-2xl bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 text-xs font-bold flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4" />
-              Foto, apelido e personalizações salvas com sucesso no seu perfil!
-            </div>
-          )}
-
-          {/* 1. Photo Customization (Upload from Device only, no fictitious images) */}
-          <div className="space-y-3">
-            <label className="block text-xs font-bold text-slate-200 flex items-center gap-1.5">
-              <Camera className="w-4 h-4 text-neon" /> 1. Foto de Perfil do Atleta:
-            </label>
-
-            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 p-4 rounded-2xl bg-dark-950/90 border border-white/10">
-              {selectedAvatar ? (
-                <img
-                  src={selectedAvatar}
-                  alt="Preview"
-                  className="w-16 h-16 rounded-2xl object-cover border-2 border-neon shrink-0"
+    <div className="space-y-8 max-w-5xl mx-auto">
+      {!isEditingProfile ? (
+        /* ===================================================================
+           INSTAGRAM-STYLE PROFILE VIEW (MOBILE & DESKTOP)
+           =================================================================== */
+        <div className="space-y-8">
+          {/* Top Profile Header Card: PlayerCard + Info + Counters + Actions */}
+          <div className="glass-card rounded-3xl p-6 sm:p-8 border border-white/15">
+            <div className="flex flex-col md:flex-row items-center md:items-center justify-center gap-6 md:gap-12">
+              {/* Player Card Oficial (Intacto: compacto c/ animação no mobile, completo no desktop) */}
+              <div className="shrink-0 flex justify-center">
+                <PlayerCard
+                  player={basePlayer}
+                  theme={currentTheme}
+                  customTag={customTag}
                 />
-              ) : (
-                <div className="w-16 h-16 rounded-2xl bg-dark-900 border-2 border-white/15 flex items-center justify-center text-neon font-display font-black text-xl shrink-0">
-                  {user?.name ? (
-                    user.name
-                      .split(' ')
-                      .slice(0, 2)
-                      .map((n) => n[0])
-                      .join('')
-                      .toUpperCase()
-                  ) : (
-                    <User className="w-7 h-7 text-slate-400" />
+              </div>
+
+              {/* Coluna Direita (ou Inferior no Mobile): Identidade, Contadores e Botão Editar Perfil */}
+              <div className="flex-1 w-full max-w-md space-y-6 text-center md:text-left">
+                {/* Nickname, Nome e Bio Esportiva */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-center md:justify-start gap-2.5 flex-wrap">
+                    <h1 className="font-display font-black text-2xl sm:text-3xl text-white">
+                      {nickname.trim() ? `@${nickname.trim()}` : basePlayer.name}
+                    </h1>
+                    {isPro && (
+                      <span className="px-2.5 py-0.5 rounded-full bg-amber-400 text-dark-950 text-[10px] font-black uppercase flex items-center gap-1">
+                        <Crown className="w-3 h-3" /> PRO
+                      </span>
+                    )}
+                  </div>
+
+                  {nickname.trim() && (
+                    <p className="text-sm font-semibold text-slate-300">{basePlayer.name}</p>
                   )}
+
+                  <p className="text-xs sm:text-sm text-neon font-semibold">
+                    {positionRole} • {customTag}
+                  </p>
                 </div>
-              )}
-              <div className="space-y-2 flex-1">
-                <div className="flex flex-wrap gap-2">
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    onChange={handleFileUpload}
-                    className="hidden"
-                  />
+
+                {/* Contadores Estilo Instagram (Partidas • Amigos • OVR) */}
+                <div className="grid grid-cols-3 divide-x divide-white/10 py-3.5 rounded-2xl bg-dark-950/75 border border-white/10">
                   <button
                     type="button"
-                    disabled={removingBg}
-                    onClick={() => fileInputRef.current?.click()}
-                    className="px-3.5 py-2 rounded-xl bg-neon hover:bg-neon-400 disabled:opacity-60 text-dark-950 font-display font-extrabold text-xs flex items-center gap-1.5"
+                    onClick={() => navigate('/app/minhas-partidas')}
+                    className="flex flex-col items-center justify-center hover:opacity-80 transition-opacity"
                   >
-                    <Upload className="w-3.5 h-3.5" />
-                    {removingBg ? 'Recortando fundo...' : 'Enviar Minha Foto do Dispositivo'}
+                    <span className="font-display font-black text-xl sm:text-2xl text-white">
+                      {basePlayer.matches}
+                    </span>
+                    <span className="text-[11px] sm:text-xs text-slate-400 font-semibold">
+                      Partidas
+                    </span>
                   </button>
-                  {selectedAvatar && (
-                    <button
-                      type="button"
-                      onClick={() => setSelectedAvatar('')}
-                      className="px-3 py-2 rounded-xl bg-white/5 hover:bg-red-500/20 text-slate-300 hover:text-red-300 border border-white/10 text-xs font-bold flex items-center gap-1.5 transition-all"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      Remover Foto
-                    </button>
-                  )}
-                </div>
-                <p className="text-[11px] text-slate-400">
-                  Envie uma foto real do seu dispositivo. Caso não envie, suas iniciais serão exibidas no card.
-                </p>
-              </div>
-            </div>
-          </div>
 
-          {/* 2. Nickname (Apelido de Quadra) & Position */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-200 mb-1.5">
-                2. Apelido de Quadra (Exibido no Card):
-              </label>
-              <input
-                type="text"
-                value={nickname}
-                onChange={(e) => setNickname(e.target.value)}
-                placeholder='Ex: "Flash", "Paredão", "Camisa 10"'
-                className="w-full bg-dark-950 border border-white/10 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-neon"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-200 mb-1.5">
-                3. Posição & Modalidade Principal:
-              </label>
-              <select
-                value={positionRole}
-                onChange={(e) => setPositionRole(e.target.value)}
-                className="w-full bg-dark-950 border border-white/10 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-neon"
-              >
-                <option value="Atacante • Futebol / Society">Atacante (ATA) • Futebol / Society</option>
-                <option value="Ala / Ponta • Futebol / Futsal">Ala / Ponta (ALA) • Futebol / Futsal</option>
-                <option value="Meia / Armador • Futebol / Society">Meia / Armador (MEI) • Futebol / Society</option>
-                <option value="Zagueiro / Fixo • Futebol / Futsal">Zagueiro / Fixo (ZAG) • Futebol / Futsal</option>
-                <option value="Goleiro • Futebol / Society">Goleiro (GOL) • Futebol / Society</option>
-                <option value="Beach Tennis">Beach Tennis (BT)</option>
-                <option value="Padel / Tênis">Padel / Tênis (PDL)</option>
-                <option value="Futevôlei">Futevôlei (FTV)</option>
-              </select>
-            </div>
-          </div>
-
-          {/* 3. Card Skin Selector (Standard + Exclusive Animated EA FC PRO Cards) */}
-          <div className="space-y-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-300 mb-2 flex items-center gap-1.5">
-                <SlidersHorizontal className="w-3.5 h-3.5 text-neon" /> 4. Cartinhas Básicas (Estilo EA Sports FC):
-              </label>
-              <div className="grid grid-cols-3 gap-2.5">
-                {CARD_THEMES.map((theme, idx) => {
-                  if (theme.isPremium) return null;
-                  return (
-                    <button
-                      key={theme.id}
-                      type="button"
-                      onClick={() => {
-                        setActiveThemeIndex(idx);
-                        updateUserProfile({ cardThemeId: theme.id });
-                      }}
-                      className={`py-2.5 px-3 rounded-xl text-xs font-bold border transition-all ${
-                        activeThemeIndex === idx
-                          ? `${theme.accentBg} border-transparent`
-                          : 'bg-dark-950 text-slate-300 border-white/10 hover:border-white/30'
-                      }`}
-                    >
-                      {theme.name}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-500/10 via-dark-950 to-dark-950 border border-amber-400/30 space-y-2.5">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-black uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
-                  <Crown className="w-3.5 h-3.5" /> Cartinhas Animadas Exclusivas PRO (Ouro, Raio ⚡ & Fogo 🔥):
-                </span>
-                {!isPro && (
-                  <span className="text-[10px] font-bold text-amber-300">
-                    Requer Sport Maker PRO
-                  </span>
-                )}
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                {CARD_THEMES.map((theme, idx) => {
-                  if (!theme.isPremium) return null;
-                  const isSelected = activeThemeIndex === idx;
-                  return (
-                    <button
-                      key={theme.id}
-                      type="button"
-                      onClick={() => {
-                        if (!isPro) {
-                          navigate('/app/seja-pro');
-                          return;
-                        }
-                        setActiveThemeIndex(idx);
-                        updateUserProfile({ cardThemeId: theme.id });
-                      }}
-                      className={`py-3 px-3 rounded-xl text-xs font-display font-extrabold border transition-all flex items-center justify-center gap-1.5 ${
-                        isSelected
-                          ? `${theme.accentBg} border-transparent scale-[1.02] shadow-lg`
-                          : isPro
-                            ? 'bg-dark-900/90 text-amber-200 border-amber-400/40 hover:border-amber-300'
-                            : 'bg-dark-950/70 text-slate-400 border-white/10 hover:border-amber-400/40'
-                      }`}
-                    >
-                      {!isPro && <Lock className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
-                      <span className="truncate">{theme.name}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-
-          {/* 4. Standard & Exclusive PRO Badges */}
-          <div className="space-y-3">
-            <label className="block text-xs font-bold text-slate-300">
-              5. Insígnias & Emblemas de Destaque:
-            </label>
-            <div className="flex flex-wrap gap-2">
-              {STANDARD_TAGS.map((tag) => (
-                <button
-                  key={tag}
-                  type="button"
-                  onClick={() => setCustomTag(tag)}
-                  className={`px-3.5 py-2 rounded-xl text-xs font-semibold border transition-all ${
-                    customTag === tag
-                      ? 'bg-neon/20 border-neon text-neon'
-                      : 'bg-dark-950 border-white/10 text-slate-300'
-                  }`}
-                >
-                  {tag}
-                </button>
-              ))}
-            </div>
-
-            {/* Exclusive PRO Emblems */}
-            <div className="pt-2">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-amber-400 flex items-center gap-1.5 mb-2">
-                <Crown className="w-3.5 h-3.5" /> Emblemas Exclusivos para Assinantes PRO:
-              </span>
-              <div className="flex flex-wrap gap-2">
-                {PRO_EXCLUSIVE_TAGS.map((proTag) => (
                   <button
-                    key={proTag}
                     type="button"
+                    onClick={() => navigate('/app/amigos')}
+                    className="flex flex-col items-center justify-center hover:opacity-80 transition-opacity"
+                  >
+                    <span className="font-display font-black text-xl sm:text-2xl text-white">
+                      {basePlayer.friendsCount}
+                    </span>
+                    <span className="text-[11px] sm:text-xs text-slate-400 font-semibold">
+                      Amigos
+                    </span>
+                  </button>
+
+                  <div className="flex flex-col items-center justify-center">
+                    <span className="font-display font-black text-xl sm:text-2xl text-neon">
+                      {basePlayer.ovr > 0 ? basePlayer.ovr : '—'}
+                    </span>
+                    <span className="text-[11px] sm:text-xs text-slate-400 font-semibold">
+                      OVR
+                    </span>
+                  </div>
+                </div>
+
+                {/* Botões de Ação: Editar Perfil + Seja PRO + Configurações */}
+                <div className="flex items-center gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setIsEditingProfile(true)}
+                    className="flex-1 py-3 px-4 rounded-xl bg-white/10 hover:bg-white/15 border border-white/15 text-white font-display font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all"
+                  >
+                    <Edit3 className="w-4 h-4 text-neon" />
+                    <span>Editar Perfil</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => navigate('/app/seja-pro')}
+                    className={`py-3 px-4 rounded-xl font-display font-extrabold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition-all ${
+                      isPro
+                        ? 'bg-amber-400/15 border border-amber-400/40 text-amber-300'
+                        : 'bg-amber-400 hover:bg-amber-300 text-dark-950'
+                    }`}
+                  >
+                    <Crown className="w-4 h-4" />
+                    <span>{isPro ? 'PRO' : 'Seja PRO'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => navigate('/app/configuracoes')}
+                    aria-label="Configurações"
+                    className="p-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/15 text-slate-300 hover:text-white transition-colors"
+                  >
+                    <Settings className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Coleção de Player Cards Obtidos (Miniaturas Limpas dos Próprios Player Cards) */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between border-b border-white/10 pb-3 px-1">
+              <span className="text-xs sm:text-sm font-display font-extrabold uppercase tracking-wider text-white flex items-center gap-2">
+                <Grid className="w-4 h-4 text-neon" />
+                Coleção de Player Cards ({unlockedCards.length}/{CARD_THEMES.length})
+              </span>
+              <span className="text-[11px] sm:text-xs text-slate-400">
+                Clique em um card para equipar
+              </span>
+            </div>
+
+            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3 sm:gap-4">
+              {CARD_THEMES.map((theme, idx) => {
+                const isLocked = theme.isPremium && !isPro;
+                const isEquipped = activeThemeIndex === idx;
+                return (
+                  <button
+                    key={theme.id}
+                    type="button"
+                    title={theme.name}
                     onClick={() => {
-                      if (!isPro) {
+                      if (isLocked) {
                         navigate('/app/seja-pro');
                         return;
                       }
-                      setCustomTag(proTag);
+                      setActiveThemeIndex(idx);
+                      updateUserProfile({ cardThemeId: theme.id });
                     }}
-                    className={`px-3.5 py-2 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5 ${
-                      customTag === proTag
-                        ? 'bg-amber-400 text-dark-950 border-amber-400 shadow-[0_0_15px_rgba(251,191,36,0.4)]'
-                        : isPro
-                          ? 'bg-amber-400/10 border-amber-400/40 text-amber-300 hover:bg-amber-400/20'
-                          : 'bg-dark-950/60 border-white/10 text-slate-500'
+                    className={`rounded-2xl p-3 sm:p-4 border transition-all flex flex-col items-center justify-between gap-3 ${
+                      isEquipped
+                        ? 'border-neon bg-neon/10 shadow-[0_0_22px_rgba(204,255,0,0.2)]'
+                        : isLocked
+                          ? 'border-white/10 bg-dark-900/50 hover:border-amber-400/40'
+                          : 'border-white/10 bg-dark-900/80 hover:border-white/30 hover:bg-white/5'
                     }`}
                   >
-                    {!isPro && <Lock className="w-3 h-3 text-amber-400" />}
-                    <span>{proTag}</span>
+                    <MiniCleanPlayerCardIcon
+                      theme={theme}
+                      isEquipped={isEquipped}
+                      isLocked={isLocked}
+                    />
+                    <span
+                      className={`text-[11px] font-display font-bold text-center leading-tight line-clamp-2 ${
+                        isEquipped
+                          ? 'text-neon'
+                          : isLocked
+                            ? 'text-slate-400'
+                            : 'text-slate-200'
+                      }`}
+                    >
+                      {theme.name}
+                    </span>
                   </button>
-                ))}
-              </div>
+                );
+              })}
             </div>
           </div>
-
-          <div className="pt-2 flex justify-end">
+        </div>
+      ) : (
+        /* ===================================================================
+           MODO EDIÇÃO DE PERFIL (ABERTO AO CLICAR EM "EDITAR PERFIL")
+           =================================================================== */
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <h2 className="font-display font-black text-xl sm:text-2xl text-white">
+              Editar Perfil & Personalizar Card
+            </h2>
             <button
-              type="submit"
-              disabled={saving}
-              className="px-6 py-3 rounded-xl bg-neon hover:bg-neon-400 text-dark-950 font-display font-extrabold text-xs sm:text-sm shadow-neon transition-all flex items-center gap-2"
+              type="button"
+              onClick={() => setIsEditingProfile(false)}
+              className="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 border border-white/15 text-xs sm:text-sm font-bold text-white flex items-center gap-1.5 transition-all"
             >
-              <Sparkles className="w-4 h-4" />
-              <span>{saving ? 'Salvando...' : 'Salvar Foto & Apelido no Perfil'}</span>
+              <X className="w-4 h-4 text-neon" /> Voltar ao Perfil
             </button>
           </div>
-        </form>
-      </div>
 
-      {/* Right Live Player Card */}
-      <div className="lg:col-span-5 flex justify-center">
-        <PlayerCard
-          player={basePlayer}
-          theme={currentTheme}
-          customTag={customTag}
-          enableDownload
-        />
-      </div>
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+            {/* Left Customization Controls */}
+            <div className="lg:col-span-7 space-y-6">
+              <form
+                onSubmit={handleSaveProfile}
+                className="glass-card rounded-3xl p-6 border border-white/15 space-y-6"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-4">
+                  <div>
+                    <span className="text-xs font-bold uppercase tracking-wider text-neon flex items-center gap-1.5">
+                      <Trophy className="w-4 h-4" /> Meu Player Card Oficial
+                    </span>
+                    <h2 className="font-display font-black text-2xl sm:text-3xl text-white mt-1">
+                      Personalizar Foto, Apelido & Card
+                    </h2>
+                  </div>
+
+                  {!isPro ? (
+                    <button
+                      type="button"
+                      onClick={() => navigate('/app/seja-pro')}
+                      className="px-3.5 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-dark-950 font-display font-extrabold text-xs flex items-center gap-1.5 shadow-[0_0_20px_rgba(251,191,36,0.4)]"
+                    >
+                      <Crown className="w-4 h-4" />
+                      <span>Seja PRO</span>
+                    </button>
+                  ) : (
+                    <span className="px-3 py-1.5 rounded-xl bg-amber-400/20 border border-amber-400/40 text-amber-300 text-xs font-bold flex items-center gap-1.5">
+                      <Crown className="w-4 h-4 text-amber-400" /> Assinante PRO Ativo
+                    </span>
+                  )}
+                </div>
+
+                {savedBanner && (
+                  <div className="p-3.5 rounded-2xl bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 text-xs font-bold flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4" />
+                    Foto, apelido e personalizações salvas com sucesso no seu perfil!
+                  </div>
+                )}
+
+                {/* 1. Photo Customization */}
+                <div className="space-y-3">
+                  <label className="block text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                    <Camera className="w-4 h-4 text-neon" /> 1. Foto de Perfil do Atleta:
+                  </label>
+
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 p-4 rounded-2xl bg-dark-950/90 border border-white/10">
+                    {selectedAvatar ? (
+                      <img
+                        src={selectedAvatar}
+                        alt="Preview"
+                        className="w-16 h-16 rounded-2xl object-cover border-2 border-neon shrink-0"
+                      />
+                    ) : (
+                      <div className="w-16 h-16 rounded-2xl bg-dark-900 border-2 border-white/15 flex items-center justify-center text-neon font-display font-black text-xl shrink-0">
+                        {user?.name ? (
+                          user.name
+                            .split(' ')
+                            .slice(0, 2)
+                            .map((n) => n[0])
+                            .join('')
+                            .toUpperCase()
+                        ) : (
+                          <User className="w-7 h-7 text-slate-400" />
+                        )}
+                      </div>
+                    )}
+                    <div className="space-y-2 flex-1">
+                      <div className="flex flex-wrap gap-2">
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          accept="image/*"
+                          onChange={handleFileUpload}
+                          className="hidden"
+                        />
+                        <button
+                          type="button"
+                          disabled={removingBg}
+                          onClick={() => fileInputRef.current?.click()}
+                          className="px-3.5 py-2 rounded-xl bg-neon hover:bg-neon-400 disabled:opacity-60 text-dark-950 font-display font-extrabold text-xs flex items-center gap-1.5"
+                        >
+                          <Upload className="w-3.5 h-3.5" />
+                          {removingBg ? 'Recortando fundo...' : 'Enviar Minha Foto do Dispositivo'}
+                        </button>
+                        {selectedAvatar && (
+                          <button
+                            type="button"
+                            onClick={() => setSelectedAvatar('')}
+                            className="px-3 py-2 rounded-xl bg-white/5 hover:bg-red-500/20 text-slate-300 hover:text-red-300 border border-white/10 text-xs font-bold flex items-center gap-1.5 transition-all"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            Remover Foto
+                          </button>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-slate-400">
+                        Envie uma foto real do seu dispositivo. Caso não envie, suas iniciais serão exibidas no card.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. Nickname & Position */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-200 mb-1.5">
+                      2. Apelido de Quadra (Exibido no Card):
+                    </label>
+                    <input
+                      type="text"
+                      value={nickname}
+                      onChange={(e) => setNickname(e.target.value)}
+                      placeholder='Ex: "Flash", "Paredão", "Camisa 10"'
+                      className="w-full bg-dark-950 border border-white/10 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-neon"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-200 mb-1.5">
+                      3. Posição & Modalidade Principal:
+                    </label>
+                    <select
+                      value={positionRole}
+                      onChange={(e) => setPositionRole(e.target.value)}
+                      className="w-full bg-dark-950 border border-white/10 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-neon"
+                    >
+                      <option value="Atacante • Futebol / Society">Atacante (ATA) • Futebol / Society</option>
+                      <option value="Ala / Ponta • Futebol / Futsal">Ala / Ponta (ALA) • Futebol / Futsal</option>
+                      <option value="Meia / Armador • Futebol / Society">Meia / Armador (MEI) • Futebol / Society</option>
+                      <option value="Zagueiro / Fixo • Futebol / Futsal">Zagueiro / Fixo (ZAG) • Futebol / Futsal</option>
+                      <option value="Goleiro • Futebol / Society">Goleiro (GOL) • Futebol / Society</option>
+                      <option value="Beach Tennis">Beach Tennis (BT)</option>
+                      <option value="Padel / Tênis">Padel / Tênis (PDL)</option>
+                      <option value="Futevôlei">Futevôlei (FTV)</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* 3. Card Skin Selector */}
+                <div className="space-y-2.5">
+                  <label className="block text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                    <SlidersHorizontal className="w-3.5 h-3.5 text-neon" /> 4. Escolher Modelo do Player Card:
+                  </label>
+                  <div className="grid grid-cols-3 sm:grid-cols-5 gap-2.5">
+                    {CARD_THEMES.map((theme, idx) => {
+                      const isLocked = theme.isPremium && !isPro;
+                      const isSelected = activeThemeIndex === idx;
+                      return (
+                        <button
+                          key={theme.id}
+                          type="button"
+                          title={theme.name}
+                          onClick={() => {
+                            if (isLocked) {
+                              navigate('/app/seja-pro');
+                              return;
+                            }
+                            setActiveThemeIndex(idx);
+                            updateUserProfile({ cardThemeId: theme.id });
+                          }}
+                          className={`rounded-2xl p-2.5 border transition-all flex flex-col items-center justify-between gap-2.5 ${
+                            isSelected
+                              ? 'border-neon bg-neon/10'
+                              : 'border-white/10 bg-dark-950 hover:border-white/30'
+                          }`}
+                        >
+                          <MiniCleanPlayerCardIcon
+                            theme={theme}
+                            isEquipped={isSelected}
+                            isLocked={isLocked}
+                          />
+                          <span
+                            className={`text-[10px] font-display font-bold text-center leading-tight line-clamp-2 ${
+                              isSelected
+                                ? 'text-neon'
+                                : isLocked
+                                  ? 'text-slate-400'
+                                  : 'text-slate-200'
+                            }`}
+                          >
+                            {theme.name}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 4. Standard & Exclusive PRO Badges */}
+                <div className="space-y-3">
+                  <label className="block text-xs font-bold text-slate-300">
+                    5. Insígnias & Emblemas de Destaque:
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {STANDARD_TAGS.map((tag) => (
+                      <button
+                        key={tag}
+                        type="button"
+                        onClick={() => setCustomTag(tag)}
+                        className={`px-3.5 py-2 rounded-xl text-xs font-semibold border transition-all ${
+                          customTag === tag
+                            ? 'bg-neon/20 border-neon text-neon'
+                            : 'bg-dark-950 border-white/10 text-slate-300'
+                        }`}
+                      >
+                        {tag}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="pt-2">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-amber-400 flex items-center gap-1.5 mb-2">
+                      <Crown className="w-3.5 h-3.5" /> Emblemas Exclusivos para Assinantes PRO:
+                    </span>
+                    <div className="flex flex-wrap gap-2">
+                      {PRO_EXCLUSIVE_TAGS.map((proTag) => (
+                        <button
+                          key={proTag}
+                          type="button"
+                          onClick={() => {
+                            if (!isPro) {
+                              navigate('/app/seja-pro');
+                              return;
+                            }
+                            setCustomTag(proTag);
+                          }}
+                          className={`px-3.5 py-2 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5 ${
+                            customTag === proTag
+                              ? 'bg-amber-400 text-dark-950 border-amber-400 shadow-[0_0_15px_rgba(251,191,36,0.4)]'
+                              : isPro
+                                ? 'bg-amber-400/10 border-amber-400/40 text-amber-300 hover:bg-amber-400/20'
+                                : 'bg-dark-950/60 border-white/10 text-slate-500'
+                          }`}
+                        >
+                          {!isPro && <Lock className="w-3 h-3 text-amber-400" />}
+                          <span>{proTag}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-2 flex justify-end gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setIsEditingProfile(false)}
+                    className="px-5 py-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/15 text-slate-200 font-display font-bold text-xs sm:text-sm transition-all"
+                  >
+                    Voltar ao Perfil
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={saving}
+                    className="px-6 py-3 rounded-xl bg-neon hover:bg-neon-400 text-dark-950 font-display font-extrabold text-xs sm:text-sm shadow-neon transition-all flex items-center gap-2"
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    <span>{saving ? 'Salvando...' : 'Salvar Alterações'}</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            {/* Right Live Player Card Preview */}
+            <div className="lg:col-span-5 flex justify-center">
+              <PlayerCard
+                player={basePlayer}
+                theme={currentTheme}
+                customTag={customTag}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

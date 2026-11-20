@@ -1,27 +1,54 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { motion, AnimatePresence } from 'motion/react';
 import {
   MapPin,
   Users,
   Trophy,
   Store,
   Zap,
-  Menu,
-  X,
   ChevronRight,
   LogIn,
   LogOut,
   Plus,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { MenuIcon } from '../ui/MenuIcon';
 
 export default function Navbar({ onNavigateLogin, onCreateMatchClick, onEnterUserHome }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [isScrolled, setIsScrolled] = useState(false);
+  const menuIconRef = useRef(null);
   const { user, isAuthenticated, logout } = useAuth();
   const navigate = useNavigate();
 
+  useEffect(() => {
+    if (mobileMenuOpen) {
+      menuIconRef.current?.startAnimation();
+    } else {
+      menuIconRef.current?.stopAnimation();
+    }
+  }, [mobileMenuOpen]);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setIsScrolled(window.scrollY > 20);
+    };
+    handleScroll();
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  const showGlassBar = isScrolled || mobileMenuOpen;
+
   return (
-    <header className="sticky top-0 z-40 border-b border-white/10 bg-dark-950/85 backdrop-blur-xl">
+    <header
+      className={`sticky top-0 z-40 border-b transition-all duration-300 ${
+        showGlassBar
+          ? 'border-white/10 bg-dark-950/85 backdrop-blur-xl shadow-[0_8px_30px_rgba(0,0,0,0.45)]'
+          : 'border-transparent bg-transparent backdrop-blur-none'
+      }`}
+    >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 sm:h-20 flex items-center justify-between">
         {/* Brand Logo */}
         <a href="#" className="flex items-center gap-2.5 group">
@@ -116,17 +143,25 @@ export default function Navbar({ onNavigateLogin, onCreateMatchClick, onEnterUse
 
         {/* Mobile Menu Toggle */}
         <button
-          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          className="md:hidden p-2.5 rounded-xl bg-white/5 border border-white/10 text-slate-200 hover:text-neon"
-          aria-label="Abrir Menu"
+          onClick={() => setMobileMenuOpen((prev) => !prev)}
+          className="md:hidden p-2.5 rounded-xl bg-white/5 border border-white/10 text-slate-200 hover:text-neon transition-colors"
+          aria-label={mobileMenuOpen ? 'Fechar Menu' : 'Abrir Menu'}
         >
-          {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+          <MenuIcon ref={menuIconRef} size={22} />
         </button>
       </div>
 
-      {/* Mobile Dropdown Drawer */}
-      {mobileMenuOpen && (
-        <div className="md:hidden border-t border-white/10 bg-dark-900/95 backdrop-blur-xl px-4 pt-4 pb-6 space-y-3">
+      {/* Mobile Dropdown Drawer com animação suave descendo */}
+      <AnimatePresence>
+        {mobileMenuOpen && (
+          <motion.div
+            initial={{ height: 0, opacity: 0, y: -8 }}
+            animate={{ height: 'auto', opacity: 1, y: 0 }}
+            exit={{ height: 0, opacity: 0, y: -8 }}
+            transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+            className="md:hidden overflow-hidden border-t border-white/10 bg-dark-900/95 backdrop-blur-xl"
+          >
+            <div className="px-4 pt-4 pb-6 space-y-3">
           {isAuthenticated ? (
             <div className="flex items-center justify-between p-3 rounded-xl bg-neon/10 border border-neon/30">
               <div className="flex items-center gap-2.5">
@@ -229,8 +264,10 @@ export default function Navbar({ onNavigateLogin, onCreateMatchClick, onEnterUse
             </span>
             <ChevronRight className="w-4 h-4 text-slate-400" />
           </a>
-        </div>
-      )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </header>
   );
 }

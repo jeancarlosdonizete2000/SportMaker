@@ -31,6 +31,13 @@ export function AuthProvider({ children }) {
     return data;
   };
 
+  const loginWithGoogle = async ({ credential, role }) => {
+    const data = await authService.loginWithGoogle({ credential, role });
+    setUser(data.user);
+    setToken(data.token);
+    return data;
+  };
+
   const logout = () => {
     authService.clearSession();
     setUser(null);
@@ -64,6 +71,7 @@ export function AuthProvider({ children }) {
         isPro: !!user?.isPro && user?.proStatus === 'active',
         login,
         register,
+        loginWithGoogle,
         logout,
         updateUserProfile,
         activateProSubscription,

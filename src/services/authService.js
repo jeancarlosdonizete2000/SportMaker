@@ -112,6 +112,38 @@ export const authService = {
   },
 
   /**
+   * Autentica ou cria conta com o Google Sign-In
+   */
+  async loginWithGoogle({ credential, role }) {
+    const response = await fetch(`${MONGO_CONFIG.restApiUrl}/auth/google`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ credential, role }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data.message || 'Não foi possível entrar com o Google.');
+    }
+    this.saveSession(data.user, data.token);
+    return data;
+  },
+
+  /**
+   * Confirma o e-mail do usuário usando o token enviado no link
+   */
+  async verifyEmailToken(token) {
+    const response = await fetch(
+      `${MONGO_CONFIG.restApiUrl}/auth/verify-email?token=${encodeURIComponent(token)}`,
+      { method: 'GET' }
+    );
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data.message || 'Link de confirmação inválido ou expirado.');
+    }
+    return data;
+  },
+
+  /**
    * Atualiza o perfil do usuário (foto, apelido, posição, insígnia) no MongoDB.
    */
   async updateProfile(updates, token) {

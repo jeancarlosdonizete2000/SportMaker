@@ -1,6 +1,7 @@
-import React, { useState, useMemo, useEffect, lazy, Suspense } from 'react';
-import { Routes, Route, Navigate, useNavigate, NavLink } from 'react-router-dom';
-import { LogOut } from 'lucide-react';
+import React, { useState, useMemo, useEffect, useRef, lazy, Suspense } from 'react';
+import { Routes, Route, Navigate, useNavigate, useLocation, NavLink } from 'react-router-dom';
+import { Search, Bell, MapPin, Navigation, X, Menu, ArrowLeft, LogOut } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../context/AuthContext';
 import { useBooking } from '../hooks/useBooking';
 import { ownerService } from '../services/ownerService';
@@ -11,6 +12,7 @@ import {
 import ArenasHomeTab from '../components/dashboard/ArenasHomeTab';
 import MobileBottomNav from '../components/layout/MobileBottomNav';
 import UserSidebar from '../components/layout/UserSidebar';
+import { TabPageSkeleton } from '../components/ui/SkeletonLoaders';
 
 const PublicLobbiesTab = lazy(() => import('../components/dashboard/PublicLobbiesTab'));
 const MyMatchesTab = lazy(() => import('../components/dashboard/MyMatchesTab'));
@@ -27,11 +29,7 @@ const CreateMatchModal = lazy(() => import('../components/modals/CreateMatchModa
 const LocationConsentModal = lazy(() => import('../components/modals/LocationConsentModal'));
 
 function TabLoader() {
-  return (
-    <div className="py-16 flex items-center justify-center">
-      <div className="w-7 h-7 rounded-full border-2 border-neon border-t-transparent animate-spin" />
-    </div>
-  );
+  return <TabPageSkeleton />;
 }
 
 export default function UserHomePage({
@@ -40,6 +38,8 @@ export default function UserHomePage({
 }) {
   const { user, isPro, updateUserProfile, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const isProfileRoute = location.pathname.startsWith('/app/perfil');
 
   // Arenas Filter State (Inicializa instantaneamente do cache do navegador)
   const [selectedCategory, setSelectedCategory] = useState('all');
@@ -47,6 +47,39 @@ export default function UserHomePage({
   const [maxRadius, setMaxRadius] = useState(10);
   const [dbArenas, setDbArenas] = useState(() => ownerService.getCachedPublicArenas());
   const [locationModalOpen, setLocationModalOpen] = useState(false);
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+  const [mobileSettingsDrawerOpen, setMobileSettingsDrawerOpen] = useState(false);
+  const [mobileHeaderVisible, setMobileHeaderVisible] = useState(true);
+  const lastScrollYRef = useRef(0);
+
+  useEffect(() => {
+    setMobileSettingsDrawerOpen(false);
+    setMobileSearchOpen(false);
+  }, [location.pathname]);
+
+  // Esconde a header mobile ao rolar para baixo e mostra ao rolar para cima
+  useEffect(() => {
+    const handleScroll = () => {
+      const currentY = window.scrollY || 0;
+      if (mobileSearchOpen || currentY <= 24) {
+        setMobileHeaderVisible(true);
+        lastScrollYRef.current = currentY;
+        return;
+      }
+
+      const delta = currentY - lastScrollYRef.current;
+      if (delta > 8) {
+        setMobileHeaderVisible(false);
+        lastScrollYRef.current = currentY;
+      } else if (delta < -8) {
+        setMobileHeaderVisible(true);
+        lastScrollYRef.current = currentY;
+      }
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [mobileSearchOpen]);
   const [userLocation, setUserLocation] = useState(
     () => user?.userLocation?.label ? user.userLocation : locationService.getStoredLocation()
   );
@@ -480,45 +513,144 @@ export default function UserHomePage({
       />
 
       {/* Mobile-Only Compact Top Header */}
-      <header className="md:hidden sticky top-0 z-40 border-b border-white/10 bg-dark-950/90 backdrop-blur-xl">
-        <div className="px-4 h-16 flex items-center justify-between">
-          <NavLink to="/app/arenas" className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-neon flex items-center justify-center text-dark-950 font-display font-black text-lg shadow-neon">
-              SM
-            </div>
-            <span className="font-display font-extrabold text-lg tracking-tight text-white">
-              SPORT<span className="text-neon">MAKER</span>
-            </span>
-          </NavLink>
+      <header
+        className={`md:hidden sticky top-0 z-40 border-b border-white/10 bg-dark-950/90 backdrop-blur-xl transition-transform duration-300 ease-out ${
+          mobileHeaderVisible || mobileSearchOpen ? 'translate-y-0' : '-translate-y-full'
+        }`}
+      >
+        <div className="px-4 h-16 grid grid-cols-3 items-center">
+          {/* Esquerda: Lupa (ocultada na página Meu Perfil) */}
+          <div className="flex items-center justify-start">
+            {!isProfileRoute && (
+              <motion.button
+                type="button"
+                whileTap={{ scale: 0.88 }}
+                onClick={() => setMobileSearchOpen((prev) => !prev)}
+                aria-label="Buscar arena ou localização"
+                className={`p-2.5 rounded-xl border transition-colors ${
+                  mobileSearchOpen
+                    ? 'bg-neon text-dark-950 border-neon shadow-neon'
+                    : 'bg-white/5 text-slate-200 border-white/10 hover:text-neon'
+                }`}
+              >
+                {mobileSearchOpen ? (
+                  <X className="w-5 h-5" />
+                ) : (
+                  <Search className="w-5 h-5" />
+                )}
+              </motion.button>
+            )}
+          </div>
 
-          <div className="flex items-center gap-2">
-            <NavLink to="/app/perfil">
-              {user?.avatar ? (
-                <img
-                  src={user.avatar}
-                  alt={user?.name}
-                  className="w-8 h-8 rounded-full object-cover border border-neon cursor-pointer"
-                />
-              ) : (
-                <div className="w-8 h-8 rounded-full bg-dark-900 border border-neon flex items-center justify-center text-[10px] font-display font-black text-neon cursor-pointer">
-                  {(user?.name || 'AT')
-                    .split(' ')
-                    .slice(0, 2)
-                    .map((n) => n[0])
-                    .join('')
-                    .toUpperCase()}
-                </div>
-              )}
+          {/* Centro: Logo Sport Maker */}
+          <div className="flex items-center justify-center">
+            <NavLink to="/app/arenas" className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-xl bg-neon flex items-center justify-center text-dark-950 font-display font-black text-base shadow-neon">
+                SM
+              </div>
+              <span className="font-display font-extrabold text-base tracking-tight text-white">
+                SPORT<span className="text-neon">MAKER</span>
+              </span>
             </NavLink>
-            <button
-              onClick={handleLogout}
-              title="Sair da conta"
-              className="p-2 rounded-lg text-slate-400 hover:text-red-400"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
+          </div>
+
+          {/* Direita: Menu de Configurações no Perfil, ou Notificações nas demais telas */}
+          <div className="flex items-center justify-end">
+            {isProfileRoute ? (
+              <motion.button
+                type="button"
+                whileTap={{ scale: 0.88 }}
+                onClick={() => setMobileSettingsDrawerOpen(true)}
+                aria-label="Abrir configurações da conta"
+                className="p-2.5 rounded-xl border bg-white/5 border-white/10 text-slate-200 hover:text-neon transition-colors"
+              >
+                <Menu className="w-5 h-5" />
+              </motion.button>
+            ) : (
+              <NavLink
+                to="/app/notificacoes"
+                aria-label="Notificações"
+                className={({ isActive }) =>
+                  `relative p-2.5 rounded-xl border transition-colors ${
+                    isActive
+                      ? 'bg-neon/15 border-neon/40 text-neon'
+                      : 'bg-white/5 border-white/10 text-slate-200 hover:text-neon'
+                  }`
+                }
+              >
+                <Bell className="w-5 h-5" />
+                {unreadNotificationsCount > 0 && (
+                  <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-neon text-dark-950 text-[9px] font-black flex items-center justify-center shadow-[0_0_8px_rgba(204,255,0,0.5)]">
+                    {unreadNotificationsCount}
+                  </span>
+                )}
+              </NavLink>
+            )}
           </div>
         </div>
+
+        {/* Aba deslizante de Busca de Arena e Localização no Mobile */}
+        <AnimatePresence>
+          {mobileSearchOpen && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.25, ease: 'easeOut' }}
+              className="overflow-hidden border-t border-white/10 bg-dark-950/95"
+            >
+              <div className="px-4 py-4 space-y-3">
+                <div className="flex items-center gap-2.5 bg-dark-900 border border-white/15 rounded-2xl px-3.5 py-2.5 focus-within:border-neon">
+                  <Search className="w-4 h-4 text-neon shrink-0" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => {
+                      setSearchQuery(e.target.value);
+                      navigate('/app/arenas');
+                    }}
+                    placeholder="Pesquisar pelo nome da arena, bairro ou esporte..."
+                    className="w-full bg-transparent text-xs sm:text-sm text-white placeholder-slate-500 focus:outline-none"
+                  />
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setSearchQuery('')}
+                      className="text-slate-400 hover:text-white"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMobileSearchOpen(false);
+                    setLocationModalOpen(true);
+                  }}
+                  className={`w-full px-3.5 py-2.5 rounded-2xl border text-xs font-bold flex items-center justify-between gap-2 transition-all ${
+                    userLocation?.label
+                      ? 'bg-emerald-500/10 border-emerald-400/35 text-emerald-300'
+                      : 'bg-amber-400/10 border-amber-400/35 text-amber-300'
+                  }`}
+                >
+                  <span className="flex items-center gap-2 truncate">
+                    <Navigation className="w-4 h-4 shrink-0" />
+                    <span className="truncate">
+                      {userLocation?.label
+                        ? `Localização: ${userLocation.label}`
+                        : 'Selecionar Localização ou Ativar GPS'}
+                    </span>
+                  </span>
+                  <span className="shrink-0 text-[11px] font-extrabold text-neon flex items-center gap-1">
+                    <MapPin className="w-3.5 h-3.5" /> Alterar
+                  </span>
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </header>
 
       {/* Main Content Area shifted right on Desktop for Sidebar */}
@@ -625,6 +757,45 @@ export default function UserHomePage({
         myMatchesCount={myMatches.length}
         unreadNotificationsCount={unreadNotificationsCount}
       />
+
+      {/* Mobile Full-Screen Slide-In (Fade para Esquerda até o final): Configurações da Conta */}
+      <AnimatePresence>
+        {mobileSettingsDrawerOpen && (
+          <motion.div
+            initial={{ x: '100%', opacity: 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            exit={{ x: '100%', opacity: 0 }}
+            transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+            className="md:hidden fixed inset-0 z-50 bg-dark-950 overflow-y-auto"
+          >
+            <div className="sticky top-0 z-10 h-16 px-4 border-b border-white/10 bg-dark-950/95 backdrop-blur-xl flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => setMobileSettingsDrawerOpen(false)}
+                className="flex items-center gap-2 text-sm font-display font-bold text-white hover:text-neon transition-colors"
+              >
+                <ArrowLeft className="w-5 h-5 text-neon" />
+                <span>Configurações da Conta</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="px-3 py-1.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs font-bold flex items-center gap-1.5"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span>Sair</span>
+              </button>
+            </div>
+
+            <div className="px-4 py-6 pb-12">
+              <Suspense fallback={<TabLoader />}>
+                <AccountSettingsTab />
+              </Suspense>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Modals */}
       <Suspense fallback={null}>

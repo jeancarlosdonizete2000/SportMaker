@@ -24,6 +24,7 @@ import {
 import { ownerService } from '../services/ownerService';
 import { useAuth } from '../context/AuthContext';
 import { isEvaluationUnlocked } from '../utils/matchTimeUtils';
+import { MatchDetailsSkeleton } from '../components/ui/SkeletonLoaders';
 
 export default function MatchDetailsPage({
   myMatches = [],
@@ -85,11 +86,7 @@ export default function MatchDetailsPage({
   }, [loadMatchDetails]);
 
   if (loading && !match) {
-    return (
-      <div className="py-16 flex items-center justify-center">
-        <div className="w-8 h-8 rounded-full border-2 border-neon border-t-transparent animate-spin" />
-      </div>
-    );
+    return <MatchDetailsSkeleton />;
   }
 
   if (!match) {

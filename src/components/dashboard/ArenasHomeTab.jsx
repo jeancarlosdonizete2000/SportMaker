@@ -45,8 +45,8 @@ export default function ArenasHomeTab({
 }) {
   return (
     <div className="space-y-8">
-      {/* Top Welcome & Search Filter Bar */}
-      <div className="glass-card rounded-3xl p-6 border border-white/15 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+      {/* Top Welcome & Search Filter Bar (Desktop only — no mobile fica na lupa do header) */}
+      <div className="hidden md:flex glass-card rounded-3xl p-6 border border-white/15 flex-col lg:flex-row lg:items-center justify-between gap-6">
         <div className="space-y-2">
           <div className="flex flex-wrap items-center gap-2">
             <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-neon">

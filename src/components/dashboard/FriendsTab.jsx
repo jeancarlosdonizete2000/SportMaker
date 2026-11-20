@@ -14,6 +14,7 @@ import {
   Bell,
 } from 'lucide-react';
 import { ownerService } from '../../services/ownerService';
+import { ListCardsSkeleton } from '../ui/SkeletonLoaders';
 
 export default function FriendsTab() {
   const navigate = useNavigate();
@@ -470,9 +471,7 @@ export default function FriendsTab() {
 
       {/* SEÇÃO 3: Meus Amigos Conectados */}
       {loading ? (
-        <div className="glass-card rounded-3xl p-8 border border-white/10 text-center text-xs text-slate-400">
-          Carregando sua lista de amigos...
-        </div>
+        <ListCardsSkeleton count={4} />
       ) : filteredFriends.length === 0 ? (
         <div className="glass-card rounded-3xl p-8 border border-white/10 text-center space-y-2">
           <p className="font-display font-bold text-base text-white">

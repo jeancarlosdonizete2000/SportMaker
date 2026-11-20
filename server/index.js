@@ -1,7 +1,9 @@
 import 'dotenv/config';
+import crypto from 'crypto';
 import express from 'express';
 import mongoose from 'mongoose';
 import cors from 'cors';
+import nodemailer from 'nodemailer';
 import { hashPassword, verifyPassword, signJwtToken, verifyJwtToken } from './security.js';
 
 const app = express();
@@ -65,6 +67,10 @@ const UserSchema = new mongoose.Schema(
     nickname: { type: String, default: '', trim: true },
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
     passwordHash: { type: String, required: true },
+    googleId: { type: String, default: null },
+    emailVerified: { type: Boolean, default: false },
+    emailVerificationToken: { type: String, default: null },
+    emailVerificationExpires: { type: Date, default: null },
     role: { type: String, enum: ['player', 'owner'], default: 'player', required: true },
     arenaName: { type: String, default: null },
     cnpj: { type: String, default: null },
@@ -396,6 +402,52 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+async function sendConfirmationEmail(toEmail, userName, verifyUrl) {
+  const smtpHost = (process.env.SMTP_HOST || '').trim();
+  const smtpUser = (process.env.SMTP_USER || '').trim();
+  const smtpPass = (process.env.SMTP_PASS || '').trim();
+  const smtpPort = Number(process.env.SMTP_PORT || 587);
+  const smtpFrom = (process.env.SMTP_FROM || smtpUser || 'no-reply@sportmaker.app').trim();
+
+  if (!smtpHost || !smtpUser || !smtpPass) {
+    console.log(`📧 [Sport Maker Dev] Link de confirmação para ${toEmail}: ${verifyUrl}`);
+    return { sent: false, mode: 'dev_console' };
+  }
+
+  const transporter = nodemailer.createTransport({
+    host: smtpHost,
+    port: smtpPort,
+    secure: smtpPort === 465,
+    auth: { user: smtpUser, pass: smtpPass },
+  });
+
+  await transporter.sendMail({
+    from: `"Sport Maker" <${smtpFrom}>`,
+    to: toEmail,
+    subject: 'Confirme seu e-mail no Sport Maker ⚽',
+    html: `
+      <div style="font-family: Arial, sans-serif; background: #07090E; color: #F8FAFC; padding: 32px; border-radius: 16px; max-width: 520px; margin: 0 auto;">
+        <h1 style="color: #CCFF00; margin: 0 0 12px;">SPORT MAKER</h1>
+        <p style="font-size: 15px;">Olá, <strong>${userName}</strong>!</p>
+        <p style="font-size: 14px; color: #CBD5E1; line-height: 1.6;">
+          Obrigado por criar sua conta no Sport Maker. Clique no botão abaixo para confirmar seu endereço de e-mail:
+        </p>
+        <div style="margin: 28px 0; text-align: center;">
+          <a href="${verifyUrl}" style="display: inline-block; background: #CCFF00; color: #07090E; font-weight: 800; padding: 14px 28px; border-radius: 12px; text-decoration: none; font-size: 14px;">
+            Confirmar meu E-mail
+          </a>
+        </div>
+        <p style="font-size: 12px; color: #64748B;">
+          Ou copie e cole este link no navegador:<br />
+          <a href="${verifyUrl}" style="color: #CCFF00;">${verifyUrl}</a>
+        </p>
+      </div>
+    `,
+  });
+
+  return { sent: true, mode: 'smtp' };
+}
+
 // POST /api/auth/register - Criptografa a senha com scrypt + salt aleatório antes de salvar no MongoDB
 app.post('/api/auth/register', async (req, res) => {
   try {
@@ -416,17 +468,38 @@ app.post('/api/auth/register', async (req, res) => {
     }
 
     const passwordHash = await hashPassword(password);
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+    const verificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
     const user = await User.create({
       name: name.trim(),
       email: normalizedEmail,
       passwordHash,
+      emailVerified: false,
+      emailVerificationToken: verificationToken,
+      emailVerificationExpires: verificationExpires,
       role: role || 'player',
       arenaName: role === 'owner' ? arenaName : null,
       cnpj: role === 'owner' ? cnpj : null,
       favoriteSport: role === 'player' ? favoriteSport || 'society' : null,
       ovr: 0,
       avatar: avatar || '',
+    });
+
+    const appOrigin = (
+      process.env.APP_URL ||
+      req.headers.origin ||
+      'http://localhost:5173'
+    ).replace(/\/+$/, '');
+    const verifyUrl = `${appOrigin}/confirmar-email?token=${verificationToken}`;
+
+    const mailResult = await sendConfirmationEmail(
+      normalizedEmail,
+      user.name,
+      verifyUrl
+    ).catch((mailErr) => {
+      console.error('⚠️ Erro ao enviar e-mail de confirmação:', mailErr.message);
+      return { sent: false, mode: 'error' };
     });
 
     const token = signJwtToken({
@@ -438,10 +511,120 @@ app.post('/api/auth/register', async (req, res) => {
     return res.status(201).json({
       user: sanitizeUser(user),
       token,
+      emailVerificationSent: mailResult.sent,
+      devVerificationUrl: mailResult.sent ? undefined : verifyUrl,
       mode: 'mongodb_atlas_live',
     });
   } catch (err) {
     return res.status(500).json({ message: err.message || 'Erro ao registrar no MongoDB.' });
+  }
+});
+
+// GET /api/auth/verify-email?token=... - Confirma o e-mail do usuário pelo link enviado
+app.get('/api/auth/verify-email', async (req, res) => {
+  try {
+    const token = String(req.query.token || '').trim();
+    if (!token) {
+      return res.status(400).json({ message: 'Token de confirmação ausente.' });
+    }
+
+    const user = await User.findOne({
+      emailVerificationToken: token,
+      emailVerificationExpires: { $gt: new Date() },
+    });
+
+    if (!user) {
+      return res.status(400).json({
+        message: 'Link de confirmação inválido ou expirado.',
+      });
+    }
+
+    user.emailVerified = true;
+    user.emailVerificationToken = null;
+    user.emailVerificationExpires = null;
+    await user.save();
+
+    return res.json({
+      ok: true,
+      message: 'E-mail confirmado com sucesso! Sua conta já está verificada.',
+      email: user.email,
+    });
+  } catch (err) {
+    return res.status(500).json({ message: err.message || 'Erro ao confirmar e-mail.' });
+  }
+});
+
+// POST /api/auth/google - Autentica ou cria conta usando ID Token do Google Sign-In
+app.post('/api/auth/google', async (req, res) => {
+  try {
+    const { credential, role } = req.body || {};
+    if (!credential) {
+      return res.status(400).json({ message: 'Credencial do Google não recebida.' });
+    }
+
+    const googleRes = await fetch(
+      `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(credential)}`
+    );
+    const googleData = await googleRes.json().catch(() => ({}));
+    if (!googleRes.ok || !googleData.email) {
+      return res.status(401).json({ message: 'Token do Google inválido ou expirado.' });
+    }
+
+    const expectedClientId = (
+      process.env.GOOGLE_CLIENT_ID ||
+      process.env.VITE_GOOGLE_CLIENT_ID ||
+      ''
+    ).trim();
+    if (expectedClientId && googleData.aud !== expectedClientId) {
+      return res.status(401).json({ message: 'Client ID do Google não corresponde.' });
+    }
+
+    const normalizedEmail = String(googleData.email).toLowerCase().trim();
+    let user = await User.findOne({ email: normalizedEmail });
+
+    if (!user) {
+      const randomPasswordHash = await hashPassword(crypto.randomBytes(24).toString('hex'));
+      user = await User.create({
+        name: googleData.name || normalizedEmail.split('@')[0],
+        email: normalizedEmail,
+        passwordHash: randomPasswordHash,
+        googleId: googleData.sub || null,
+        emailVerified: true,
+        role: role === 'owner' ? 'owner' : 'player',
+        favoriteSport: role === 'owner' ? null : 'society',
+        ovr: 0,
+        avatar: googleData.picture || '',
+      });
+    } else {
+      let dirty = false;
+      if (!user.emailVerified) {
+        user.emailVerified = true;
+        dirty = true;
+      }
+      if (!user.googleId && googleData.sub) {
+        user.googleId = googleData.sub;
+        dirty = true;
+      }
+      if (!user.avatar && googleData.picture) {
+        user.avatar = googleData.picture;
+        dirty = true;
+      }
+      if (dirty) await user.save();
+    }
+
+    const token = signJwtToken({
+      sub: String(user._id),
+      email: user.email,
+      role: user.role,
+    });
+
+    return res.json({
+      user: sanitizeUser(user),
+      token,
+      mode: 'google_oauth',
+    });
+  } catch (err) {
+    return res.status(500).json({ message: err.message || 'Erro ao autenticar com Google.' });
   }
 });
 
