@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { motion } from 'motion/react';
 import {
   ArrowLeft,
   MapPin,
@@ -20,10 +21,22 @@ import {
   UserPlus,
   MessageCircle,
   Send,
+  Trophy,
+  Sparkles,
+  Award,
+  CreditCard,
+  QrCode,
 } from 'lucide-react';
 import { ownerService } from '../services/ownerService';
+import { MONGO_CONFIG } from '../services/mongoClient';
 import { useAuth } from '../context/AuthContext';
-import { isEvaluationUnlocked } from '../utils/matchTimeUtils';
+import PlayerCard from '../components/cards/PlayerCard';
+import { CARD_THEMES } from '../data/mockData';
+import {
+  isEvaluationUnlocked,
+  isMatchEnded,
+  isEvaluationClosed,
+} from '../utils/matchTimeUtils';
 import { MatchDetailsSkeleton } from '../components/ui/SkeletonLoaders';
 
 export default function MatchDetailsPage({
@@ -51,6 +64,12 @@ export default function MatchDetailsPage({
   const [invitingFriendId, setInvitingFriendId] = useState(null);
   const [joiningMatch, setJoiningMatch] = useState(false);
   const [respondingInvite, setRespondingInvite] = useState(false);
+  const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState('pix');
+  const [payingShare, setPayingShare] = useState(false);
+  const [mvpProfile, setMvpProfile] = useState(null);
+  const onMatchUpdatedRef = useRef(onMatchUpdated);
+  onMatchUpdatedRef.current = onMatchUpdated;
 
   useEffect(() => {
     ownerService
@@ -72,18 +91,47 @@ export default function MatchDetailsPage({
       const fresh = await ownerService.getMatchById(matchId);
       if (fresh) {
         setMatch(fresh);
-        if (onMatchUpdated) onMatchUpdated(fresh);
+        if (onMatchUpdatedRef.current) onMatchUpdatedRef.current(fresh);
       }
     } catch {
       // mantém dados locais
     } finally {
       setLoading(false);
     }
-  }, [matchId, onMatchUpdated]);
+  }, [matchId]);
 
   useEffect(() => {
     loadMatchDetails();
   }, [loadMatchDetails]);
+
+  const targetMvpId =
+    match?.evaluationSummary?.mvpPlayerId ||
+    (Array.isArray(match?.evaluationSummary?.playerRatings) &&
+      match.evaluationSummary.playerRatings[0]?.id) ||
+    match?.hostId ||
+    user?._id;
+  const isCurrentMatchEnded = match ? isMatchEnded(match) : false;
+
+  useEffect(() => {
+    if (!isCurrentMatchEnded || !targetMvpId) return;
+    if (user?._id && String(targetMvpId) === String(user._id)) {
+      setMvpProfile(user);
+      return;
+    }
+
+    let active = true;
+    fetch(`${MONGO_CONFIG.restApiUrl}/users/${targetMvpId}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((json) => {
+        if (active && json?.user) {
+          setMvpProfile(json.user);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [isCurrentMatchEnded, targetMvpId, user?._id]);
 
   if (loading && !match) {
     return <MatchDetailsSkeleton />;
@@ -117,8 +165,44 @@ export default function MatchDetailsPage({
     : allParticipants.filter(
         (p) =>
           p.requestStatus === 'pending' ||
-          String(p.status || '').toLowerCase().includes('aguardando host')
+          p.requestStatus === 'awaiting_payment' ||
+          String(p.status || '').toLowerCase().includes('aguardando')
       );
+
+  const currentUserParticipant = allParticipants.find(
+    (p) => String(p.userId) === String(user?._id)
+  );
+  const isAwaitingMyPayment = Boolean(
+    !isHost &&
+      (match.requestStatus === 'awaiting_payment' ||
+        currentUserParticipant?.requestStatus === 'awaiting_payment' ||
+        String(currentUserParticipant?.status || '')
+          .toLowerCase()
+          .includes('aguardando pagamento'))
+  );
+
+  const handleConfirmMatchPayment = async () => {
+    setPayingShare(true);
+    setErrorMsg('');
+    try {
+      const res = await ownerService.payMatchShare(match.id || match._id, {
+        paymentMethod,
+      });
+      if (res.match) {
+        setMatch(res.match);
+        if (onMatchUpdatedRef.current) onMatchUpdatedRef.current(res.match);
+      }
+      setPaymentModalOpen(false);
+      setFeedbackMsg(
+        res.message || 'Pagamento confirmado! Você já está confirmado na partida.'
+      );
+      setTimeout(() => setFeedbackMsg(''), 4000);
+    } catch (err) {
+      setErrorMsg(err.message || 'Não foi possível confirmar o pagamento.');
+    } finally {
+      setPayingShare(false);
+    }
+  };
 
   const approvedParticipants = Array.isArray(match.approvedParticipants)
     ? match.approvedParticipants
@@ -290,6 +374,112 @@ export default function MatchDetailsPage({
     );
   };
 
+  const isCancelled = String(match.status || '').toLowerCase().includes('cancelad');
+  const matchEnded = isMatchEnded(match);
+  const evaluationClosed = isEvaluationClosed(match);
+  const requiresSplitPayment = Boolean(
+    match.splitWithFriends ||
+      (Array.isArray(match.extras) &&
+        match.extras.some((e) => /divis[aã]o|pix split/i.test(String(e))))
+  );
+
+  // Consolida notas dos jogadores, avaliação da partida e MVP para partidas encerradas
+  const summary = match.evaluationSummary || {};
+  const matchArenaStars = summary.arenaStars || match.evaluationStars || 5;
+  const matchArenaTier =
+    summary.arenaTierLabel ||
+    (matchArenaStars >= 5
+      ? 'Padrão Série A'
+      : matchArenaStars === 4
+        ? 'Arena Top'
+        : 'Arena Verificada');
+  const matchArenaComment = summary.arenaComment || '';
+
+  const ratedPlayersList =
+    Array.isArray(summary.playerRatings) && summary.playerRatings.length > 0
+      ? summary.playerRatings
+      : (approvedParticipants.length > 0
+          ? approvedParticipants
+          : [
+              {
+                userId: match.hostId || 'host',
+                name: match.host?.name || user?.name || 'Organizador da Partida',
+                avatar: match.host?.avatar || user?.avatar || '',
+                ovr: match.host?.rating || user?.ovr || 85,
+              },
+            ]
+        ).map((p, idx) => ({
+          id: p.userId || p.id || `p_${idx}`,
+          name: p.name || 'Atleta',
+          avatar: p.avatar || '',
+          score:
+            typeof p.matchScore === 'number'
+              ? p.matchScore
+              : Number((9.2 - idx * 0.3).toFixed(1)),
+          badges:
+            Array.isArray(p.matchBadges) && p.matchBadges.length > 0
+              ? p.matchBadges
+              : idx === 0
+                ? ['Craque da Partida', 'Fair Play']
+                : ['Fair Play'],
+        }));
+
+  const mvpPlayer =
+    ratedPlayersList.find((p) => String(p.id) === String(summary.mvpPlayerId)) ||
+    [...ratedPlayersList].sort((a, b) => (b.score || 0) - (a.score || 0))[0] ||
+    null;
+
+  const LEGACY_THEME_MAP = {
+    'gold-toty': 'card-ouro-pro',
+    'thunder-pro': 'card-future-stars-pro',
+    'inferno-pro': 'card-fut-red-pro',
+  };
+  const mvpThemeId =
+    LEGACY_THEME_MAP[mvpProfile?.cardThemeId] || mvpProfile?.cardThemeId;
+  const mvpTheme =
+    CARD_THEMES.find((t) => t.id === mvpThemeId) ||
+    (mvpProfile?.isPro
+      ? CARD_THEMES.find((t) => t.id === 'card-ouro-pro') || CARD_THEMES[0]
+      : CARD_THEMES[0]);
+
+  const scaledMvpStat = Math.min(
+    99,
+    Math.max(70, Math.round((Number(mvpPlayer?.score) || 9.2) * 10))
+  );
+
+  const mvpCardPlayer = mvpPlayer
+    ? {
+        id: mvpProfile?.id || mvpProfile?._id || mvpPlayer.id,
+        name: mvpProfile?.name || mvpPlayer.name || 'Craque MVP',
+        nickname: mvpProfile?.nickname || '',
+        role:
+          mvpProfile?.positionRole ||
+          mvpProfile?.sport ||
+          'Craque da Partida • MVP',
+        ovr: mvpProfile?.ovr || scaledMvpStat,
+        avatar: mvpProfile?.avatar || mvpPlayer.avatar || '',
+        avatarScale: mvpProfile?.avatarScale || 100,
+        matches: mvpProfile?.matches ?? mvpProfile?.matchesCount ?? 1,
+        mvpCount: Math.max(1, mvpProfile?.mvpCount ?? 1),
+        friendsCount:
+          mvpProfile?.friendsCount ??
+          (Array.isArray(mvpProfile?.friends) ? mvpProfile.friends.length : 0),
+        stats: mvpProfile?.stats || {
+          ritmo: scaledMvpStat,
+          finalizacao: scaledMvpStat,
+          passe: scaledMvpStat,
+          defesa: Math.max(65, scaledMvpStat - 6),
+          fisico: scaledMvpStat,
+          fairPlay: 95,
+        },
+        badgesList:
+          Array.isArray(mvpPlayer.badges) && mvpPlayer.badges.length > 0
+            ? mvpPlayer.badges
+            : ['👑 MVP da Partida'],
+        isPro: Boolean(mvpProfile?.isPro),
+      }
+    : null;
+
   return (
     <div className="space-y-8 pb-12">
       {/* Top Bar */}
@@ -303,26 +493,29 @@ export default function MatchDetailsPage({
         </button>
 
         <div className="flex flex-wrap items-center gap-2">
-          {!isAlreadyInMatch &&
-            !String(match.status || '').toLowerCase().includes('cancelad') && (
-              <button
-                type="button"
-                disabled={joiningMatch}
-                onClick={handleJoinMatchDirectly}
-                className="px-4 py-2.5 rounded-xl bg-neon hover:bg-neon-400 text-dark-950 font-display font-extrabold text-xs shadow-neon transition-all flex items-center gap-1.5"
-              >
-                <Send className="w-4 h-4" />
-                <span>{joiningMatch ? 'Enviando...' : 'Solicitar Entrada na Partida'}</span>
-              </button>
-            )}
+          {!isAlreadyInMatch && !isCancelled && !matchEnded && (
+            <button
+              type="button"
+              disabled={joiningMatch}
+              onClick={handleJoinMatchDirectly}
+              className="px-4 py-2.5 rounded-xl bg-neon hover:bg-neon-400 text-dark-950 font-display font-extrabold text-xs shadow-neon transition-all flex items-center gap-1.5"
+            >
+              <Send className="w-4 h-4" />
+              <span>{joiningMatch ? 'Enviando...' : 'Solicitar Entrada na Partida'}</span>
+            </button>
+          )}
 
           {match.evaluated ? (
             <span className="px-3.5 py-2 rounded-xl bg-amber-400/15 border border-amber-400/40 text-amber-300 text-xs font-bold flex items-center gap-1.5">
               <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
               Avaliada ({match.evaluationStars || 5}★)
             </span>
-          ) : isEvaluationUnlocked(match) &&
-            !String(match.status || '').toLowerCase().includes('cancelad') ? (
+          ) : isEvaluationUnlocked(match) && !isCancelled && evaluationClosed ? (
+            <span className="px-3.5 py-2 rounded-xl bg-white/5 border border-white/10 text-slate-400 text-xs font-bold flex items-center gap-1.5">
+              <Clock className="w-4 h-4" />
+              Avaliação Encerrada
+            </span>
+          ) : isEvaluationUnlocked(match) && !isCancelled ? (
             <button
               onClick={() => navigate(`/app/avaliar/${match.id}`)}
               className="px-4 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-dark-950 font-display font-black text-xs transition-all flex items-center gap-1.5"
@@ -332,11 +525,13 @@ export default function MatchDetailsPage({
             </button>
           ) : null}
 
-          {onCancelMatch && (
+          {onCancelMatch && !matchEnded && !isCancelled && (
             <button
-              onClick={() => {
-                onCancelMatch(match.id);
-                navigate('/app/minhas-partidas');
+              onClick={async () => {
+                const ok = await onCancelMatch(match.id);
+                if (ok !== false) {
+                  navigate('/app/minhas-partidas');
+                }
               }}
               className="px-4 py-2.5 rounded-xl bg-white/5 hover:bg-red-500/20 text-slate-300 hover:text-red-300 border border-white/10 text-xs font-bold transition-all flex items-center gap-1.5"
             >
@@ -353,7 +548,7 @@ export default function MatchDetailsPage({
           <div className="flex flex-wrap items-center gap-2">
             <span className="px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-bold flex items-center gap-1.5">
               <CheckCircle2 className="w-3.5 h-3.5" />
-              {match.status}
+              {matchEnded && !isCancelled ? 'Partida Encerrada' : match.status}
             </span>
 
             <span className="px-2.5 py-1 rounded-lg bg-neon/15 text-neon border border-neon/30 text-xs font-bold">
@@ -401,6 +596,24 @@ export default function MatchDetailsPage({
             ))}
           </div>
         )}
+
+        {/* Aviso de Divisão de Valor via Gateway de Pagamento */}
+        {requiresSplitPayment && !isCancelled && !matchEnded && (
+          <div className="p-4 rounded-2xl bg-amber-400/10 border border-amber-400/35 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="space-y-0.5">
+              <span className="text-xs font-display font-black uppercase tracking-wider text-amber-300 flex items-center gap-1.5">
+                <ShieldCheck className="w-4 h-4 text-amber-400" />
+                Divisão de Valor entre Jogadores Ativa (R$ {match.pricePerPlayer || 20},00 / atleta)
+              </span>
+              <p className="text-xs text-slate-300">
+                Nesta partida, a entrada de outros jogadores no elenco confirmado só é liberada após a confirmação automática do gateway de pagamento.
+              </p>
+            </div>
+            <span className="shrink-0 px-3 py-1.5 rounded-xl bg-amber-400/20 border border-amber-400/40 text-amber-300 text-[11px] font-bold">
+              Gateway Obrigatório
+            </span>
+          </div>
+        )}
       </div>
 
       {feedbackMsg && (
@@ -417,10 +630,35 @@ export default function MatchDetailsPage({
         </div>
       )}
 
+      {/* BANNER PARA O SOLICITANTE ACEITO PELO HOST REALIZAR O PAGAMENTO DA COTA */}
+      {isAwaitingMyPayment && !isCancelled && !matchEnded && (
+        <div className="glass-card rounded-3xl p-6 sm:p-7 border-2 border-amber-400 bg-gradient-to-r from-amber-500/15 via-dark-900 to-dark-950 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-[0_0_30px_-5px_rgba(251,191,36,0.35)]">
+          <div className="space-y-1">
+            <span className="text-xs font-bold uppercase tracking-wider text-amber-300 flex items-center gap-1.5">
+              <CreditCard className="w-4 h-4 text-amber-400" /> Solicitação Aceita • Aguardando Pagamento
+            </span>
+            <h2 className="font-display font-black text-xl sm:text-2xl text-white">
+              O organizador aceitou sua entrada na partida!
+            </h2>
+            <p className="text-xs sm:text-sm text-slate-300">
+              Para confirmar sua vaga definitiva no elenco, realize o pagamento da sua cota de{' '}
+              <strong className="text-amber-300">R$ {match.pricePerPlayer || 20},00</strong>.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setPaymentModalOpen(true)}
+            className="shrink-0 px-6 py-3.5 rounded-2xl bg-amber-400 hover:bg-amber-300 text-dark-950 font-display font-black text-xs sm:text-sm shadow-[0_0_20px_rgba(251,191,36,0.45)] transition-all flex items-center justify-center gap-2"
+          >
+            <CreditCard className="w-4 h-4" />
+            <span>Realizar Pagamento (R$ {match.pricePerPlayer || 20},00)</span>
+          </button>
+        </div>
+      )}
+
       {/* BANNER DE CONVITE RECEBIDO (PARA O ATLETA CONVIDADO ACEITAR OU RECUSAR A PARTIDA) */}
-      {match.isInvited &&
-        !isAlreadyInMatch &&
-        !String(match.status || '').toLowerCase().includes('cancelad') && (
+      {match.isInvited && !isAlreadyInMatch && !isCancelled && !matchEnded && (
           <div className="glass-card rounded-3xl p-6 sm:p-7 border-2 border-neon/50 bg-neon/10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="space-y-1">
               <span className="text-xs font-bold uppercase tracking-wider text-neon flex items-center gap-1.5">
@@ -459,7 +697,7 @@ export default function MatchDetailsPage({
         )}
 
       {/* SEÇÃO DE SOLICITAÇÕES PENDENTES (EXCLUSIVA PARA O ORGANIZADOR ACEITAR OU RECUSAR) */}
-      {isHost && (
+      {isHost && !matchEnded && !isCancelled && (
       <div className="glass-card rounded-3xl p-6 sm:p-8 border-2 border-amber-400/40 bg-amber-400/5 space-y-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
@@ -507,24 +745,35 @@ export default function MatchDetailsPage({
                       </span>
                     </div>
                     <p className="text-xs text-amber-300 mt-0.5">
-                      Solicitou entrada nesta partida
+                      {person.requestStatus === 'awaiting_payment'
+                        ? '⏳ Aceito por você • Aguardando pagamento do jogador'
+                        : requiresSplitPayment
+                          ? 'Solicitou entrada • Ao aceitar, será notificado para pagar'
+                          : 'Solicitou entrada nesta partida'}
                     </p>
                   </div>
                 </div>
 
                 {isHost ? (
                   <div className="flex items-center gap-2 shrink-0">
-                    <button
-                      type="button"
-                      disabled={actionUserId === (person.userId || person._id)}
-                      onClick={() =>
-                        handleRespondRequest(person.userId || person._id, 'accept')
-                      }
-                      className="px-4 py-2 rounded-xl bg-emerald-400 hover:bg-emerald-300 text-dark-950 text-xs font-display font-extrabold transition-all flex items-center gap-1.5 shadow-[0_0_15px_rgba(52,211,153,0.35)]"
-                    >
-                      <Check className="w-4 h-4 stroke-[2.5]" />
-                      <span>Aceitar</span>
-                    </button>
+                    {person.requestStatus === 'awaiting_payment' ? (
+                      <span className="px-3.5 py-2 rounded-xl bg-amber-400/15 border border-amber-400/35 text-amber-300 text-xs font-display font-extrabold flex items-center gap-1.5">
+                        <Clock className="w-3.5 h-3.5" />
+                        <span>Aguardando Pagamento</span>
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={actionUserId === (person.userId || person._id)}
+                        onClick={() =>
+                          handleRespondRequest(person.userId || person._id, 'accept')
+                        }
+                        className="px-4 py-2 rounded-xl bg-emerald-400 hover:bg-emerald-300 text-dark-950 text-xs font-display font-extrabold transition-all flex items-center gap-1.5 shadow-[0_0_15px_rgba(52,211,153,0.35)]"
+                      >
+                        <Check className="w-4 h-4 stroke-[2.5]" />
+                        <span>Aceitar</span>
+                      </button>
+                    )}
 
                     <button
                       type="button"
@@ -550,6 +799,224 @@ export default function MatchDetailsPage({
       </div>
       )}
 
+      {/* DESTAQUE PREMIUM DO MVP + AVALIAÇÃO DA PARTIDA + NOTAS DOS JOGADORES (PARTIDA ENCERRADA) */}
+      {matchEnded && !isCancelled && (
+        <div className="space-y-6">
+          {/* Card MVP Premium Animado */}
+          {mvpPlayer && (
+            <motion.div
+              initial={{ opacity: 0, y: 16, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={{ duration: 0.5, ease: 'easeOut' }}
+              className="relative rounded-3xl p-[2px] bg-gradient-to-r from-amber-300 via-yellow-500 to-amber-300 shadow-[0_0_45px_-8px_rgba(251,191,36,0.65)] overflow-hidden"
+            >
+              <div className="relative rounded-[22px] bg-gradient-to-br from-[#2a1f08] via-dark-950 to-[#1a1305] p-6 sm:p-8 overflow-hidden">
+                <div className="absolute -top-20 -right-20 w-60 h-60 rounded-full bg-amber-400/20 blur-3xl pointer-events-none" />
+                <div className="absolute -bottom-20 -left-20 w-60 h-60 rounded-full bg-yellow-500/15 blur-3xl pointer-events-none" />
+
+                <div className="relative z-10 flex flex-col lg:flex-row items-center justify-between gap-8">
+                  {/* Coluna Esquerda: Informações e Nota de Destaque do MVP */}
+                  <div className="flex-1 w-full space-y-5 text-center lg:text-left">
+                    <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-amber-400/20 border border-amber-300/40 text-amber-300 text-xs font-display font-black uppercase tracking-widest shadow-[0_0_20px_rgba(251,191,36,0.35)]">
+                      <motion.span
+                        animate={{ rotate: [0, -10, 10, 0], scale: [1, 1.15, 1] }}
+                        transition={{ duration: 2.2, repeat: Infinity, ease: 'easeInOut' }}
+                      >
+                        <Crown className="w-4 h-4 fill-amber-300 text-amber-300" />
+                      </motion.span>
+                      <span>Craque Oficial da Partida (MVP)</span>
+                    </div>
+
+                    {/* MOBILE: Player Card logo abaixo do título "Craque Oficial da Partida (MVP)" */}
+                    {mvpCardPlayer && (
+                      <div className="lg:hidden flex justify-center pt-1">
+                        <PlayerCard
+                          player={mvpCardPlayer}
+                          theme={mvpTheme}
+                          customTag={mvpProfile?.customTag || '👑 MVP da Partida'}
+                        />
+                      </div>
+                    )}
+
+                    <div>
+                      <h2 className="font-display font-black text-3xl sm:text-4xl text-white drop-shadow">
+                        {mvpPlayer.name}
+                      </h2>
+                      <p className="text-xs sm:text-sm text-amber-200/80 mt-1">
+                        Eleito o melhor jogador em quadra pelos atletas da partida!
+                      </p>
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-center lg:justify-start gap-2">
+                      {(mvpPlayer.badges || ['Craque da Partida']).map((badge, bIdx) => (
+                        <span
+                          key={bIdx}
+                          className="px-3 py-1 rounded-xl bg-amber-400/15 border border-amber-400/35 text-amber-200 text-xs font-bold flex items-center gap-1.5"
+                        >
+                          <Award className="w-3.5 h-3.5 text-amber-400" />
+                          {badge}
+                        </span>
+                      ))}
+                    </div>
+
+                    {/* Nota de Destaque do MVP */}
+                    <div className="pt-2 flex justify-center lg:justify-start">
+                      <motion.div
+                        animate={{ scale: [1, 1.04, 1] }}
+                        transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+                        className="inline-flex items-center gap-4 px-6 py-3.5 rounded-2xl bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500 text-dark-950 shadow-[0_0_30px_rgba(251,191,36,0.55)]"
+                      >
+                        <Trophy className="w-7 h-7 stroke-[2.5]" />
+                        <div className="text-left">
+                          <span className="text-[10px] font-display font-black uppercase tracking-widest block">
+                            Nota Oficial MVP
+                          </span>
+                          <span className="font-display font-black text-3xl leading-none">
+                            {Number(mvpPlayer.score || 9.5).toFixed(1)}{' '}
+                            <span className="text-xs font-extrabold">/ 10</span>
+                          </span>
+                        </div>
+                      </motion.div>
+                    </div>
+                  </div>
+
+                  {/* DESKTOP: Player Card Real do Craque da Partida à direita */}
+                  {mvpCardPlayer && (
+                    <div className="hidden lg:flex shrink-0 justify-center">
+                      <PlayerCard
+                        player={mvpCardPlayer}
+                        theme={mvpTheme}
+                        customTag={mvpProfile?.customTag || '👑 MVP da Partida'}
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          {/* Avaliação da Partida / Arena & Notas dos Jogadores */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* Avaliação da Partida / Arena */}
+            <div className="lg:col-span-5 glass-card rounded-3xl p-6 border border-amber-400/30 space-y-4 flex flex-col justify-between">
+              <div className="space-y-3">
+                <span className="text-xs font-bold uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
+                  <Star className="w-4 h-4 fill-amber-400 text-amber-400" /> Avaliação da Partida
+                </span>
+                <h3 className="font-display font-black text-xl text-white">
+                  Nota da Arena & Jogo
+                </h3>
+
+                <div className="p-4 rounded-2xl bg-dark-950/90 border border-white/10 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1">
+                      {[1, 2, 3, 4, 5].map((s) => (
+                        <Star
+                          key={s}
+                          className={`w-5 h-5 ${
+                            s <= matchArenaStars
+                              ? 'text-amber-400 fill-amber-400'
+                              : 'text-slate-700 fill-slate-700'
+                          }`}
+                        />
+                      ))}
+                    </div>
+                    <span className="font-display font-black text-lg text-amber-300">
+                      {matchArenaStars}.0 / 5.0
+                    </span>
+                  </div>
+                  <p className="text-xs font-bold text-neon">{matchArenaTier}</p>
+                  {matchArenaComment && (
+                    <p className="text-xs text-slate-300 italic pt-1 border-t border-white/10">
+                      "{matchArenaComment}"
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <p className="text-[11px] text-slate-400">
+                {evaluationClosed
+                  ? '✓ Janela de avaliação encerrada e notas consolidadas.'
+                  : '⚡ Avaliação aberta para os atletas participantes.'}
+              </p>
+            </div>
+
+            {/* Notas dos Jogadores da Partida */}
+            <div className="lg:col-span-7 glass-card rounded-3xl p-6 border border-white/15 space-y-4">
+              <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                <div>
+                  <span className="text-xs font-bold uppercase tracking-wider text-neon flex items-center gap-1.5">
+                    <Award className="w-4 h-4" /> Desempenho Individual
+                  </span>
+                  <h3 className="font-display font-black text-xl text-white mt-0.5">
+                    Notas dos Jogadores ({ratedPlayersList.length})
+                  </h3>
+                </div>
+              </div>
+
+              <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
+                {ratedPlayersList.map((rp, idx) => {
+                  const isMvp = mvpPlayer && String(rp.id) === String(mvpPlayer.id);
+                  const numScore = Number(rp.score || 8.5);
+                  return (
+                    <div
+                      key={rp.id || idx}
+                      className={`p-3.5 rounded-2xl border flex items-center justify-between gap-3 transition-all ${
+                        isMvp
+                          ? 'bg-amber-400/10 border-amber-400/50 shadow-[0_0_20px_-5px_rgba(251,191,36,0.35)]'
+                          : 'bg-dark-950/90 border-white/10'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3 overflow-hidden">
+                        {renderAvatar(rp, 'w-10 h-10')}
+                        <div className="overflow-hidden">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="text-sm font-bold text-white truncate">
+                              {rp.name}
+                            </p>
+                            {isMvp && (
+                              <span className="px-2 py-0.5 rounded-full bg-amber-400 text-dark-950 text-[10px] font-display font-black uppercase flex items-center gap-1">
+                                <Crown className="w-3 h-3 fill-dark-950" /> MVP
+                              </span>
+                            )}
+                          </div>
+                          {rp.badges && rp.badges.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {rp.badges.map((b, bIdx) => (
+                                <span
+                                  key={bIdx}
+                                  className="text-[10px] px-2 py-0.5 rounded bg-white/5 text-slate-300 border border-white/10 font-semibold"
+                                >
+                                  {b}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="text-right shrink-0">
+                        <span
+                          className={`font-display font-black text-lg px-3 py-1 rounded-xl border ${
+                            isMvp
+                              ? 'bg-amber-400 text-dark-950 border-amber-300'
+                              : numScore >= 8
+                                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/40'
+                                : 'bg-white/10 text-white border-white/15'
+                          }`}
+                        >
+                          {numScore.toFixed(1)}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* GRID: JOGADORES CONFIRMADOS + DETALHES DA ARENA */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Lista de Jogadores Confirmados na Partida */}
@@ -560,12 +1027,16 @@ export default function MatchDetailsPage({
                 <Users className="w-4 h-4" /> Elenco da Partida
               </span>
               <h3 className="font-display font-black text-xl text-white mt-0.5">
-                Jogadores Confirmados ({approvedParticipants.length}/{match.totalSlots || 14})
+                {matchEnded
+                  ? `Jogadores da Partida (${approvedParticipants.length || 1})`
+                  : `Jogadores Confirmados (${approvedParticipants.length}/${match.totalSlots || 14})`}
               </h3>
             </div>
-            <span className="px-3 py-1 rounded-full bg-neon/15 text-neon text-xs font-extrabold">
-              {(match.totalSlots || 14) - approvedParticipants.length} vagas livres
-            </span>
+            {!matchEnded && !isCancelled && (
+              <span className="px-3 py-1 rounded-full bg-neon/15 text-neon text-xs font-extrabold">
+                {(match.totalSlots || 14) - approvedParticipants.length} vagas livres
+              </span>
+            )}
           </div>
 
           {approvedParticipants.length === 0 ? (
@@ -609,7 +1080,7 @@ export default function MatchDetailsPage({
                       </div>
                     </div>
 
-                    {isHost && !isPlayerHost && (
+                    {isHost && !isPlayerHost && !matchEnded && !isCancelled && (
                       <button
                         type="button"
                         disabled={actionUserId === (player.userId || player._id)}
@@ -679,8 +1150,8 @@ export default function MatchDetailsPage({
         </div>
       </div>
 
-      {/* SEÇÃO: CONVIDAR JOGADORES (LINK EXTERNO, WHATSAPP, COPIAR URL E AMIGOS) */}
-      {!String(match.status || '').toLowerCase().includes('cancelad') && (
+      {/* SEÇÃO: CONVIDAR JOGADORES (LINK EXTERNO, WHATSAPP, COPIAR URL E AMIGOS) — OCULTADA EM PARTIDAS ENCERRADAS OU CANCELADAS */}
+      {!isCancelled && !matchEnded && (
         <div className="glass-card rounded-3xl p-6 sm:p-8 border border-white/15 space-y-6">
           <div>
             <span className="text-xs font-bold uppercase tracking-wider text-neon flex items-center gap-1.5">
@@ -826,6 +1297,102 @@ export default function MatchDetailsPage({
                 </div>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE PAGAMENTO DA COTA DA PARTIDA (PÓS-ACEITE DO ORGANIZADOR) */}
+      {paymentModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="bg-dark-900 border border-amber-400/40 w-full max-w-md rounded-t-3xl sm:rounded-3xl p-6 space-y-5 shadow-2xl">
+            <div className="flex items-start justify-between border-b border-white/10 pb-4">
+              <div>
+                <span className="text-xs font-bold uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
+                  <CreditCard className="w-3.5 h-3.5" /> Checkout da Partida • Divisão de Valor
+                </span>
+                <h3 className="font-display font-black text-xl text-white mt-0.5">
+                  Cota Individual — R$ {match.pricePerPlayer || 20},00
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  {match.title} • {match.arena}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPaymentModalOpen(false)}
+                className="p-2 rounded-xl bg-white/5 text-slate-400 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2.5">
+              <button
+                type="button"
+                onClick={() => setPaymentMethod('pix')}
+                className={`p-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition-all ${
+                  paymentMethod === 'pix'
+                    ? 'bg-neon/15 border-neon text-neon'
+                    : 'bg-dark-950 border-white/10 text-slate-300'
+                }`}
+              >
+                <QrCode className="w-4 h-4" /> Pix (Instantâneo)
+              </button>
+              <button
+                type="button"
+                onClick={() => setPaymentMethod('card')}
+                className={`p-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition-all ${
+                  paymentMethod === 'card'
+                    ? 'bg-neon/15 border-neon text-neon'
+                    : 'bg-dark-950 border-white/10 text-slate-300'
+                }`}
+              >
+                <CreditCard className="w-4 h-4" /> Cartão
+              </button>
+            </div>
+
+            {paymentMethod === 'pix' ? (
+              <div className="p-4 rounded-2xl bg-dark-950 border border-white/10 text-center space-y-2">
+                <QrCode className="w-16 h-16 text-neon mx-auto" />
+                <p className="text-xs font-bold text-white">
+                  QR Code Pix da Cota • R$ {match.pricePerPlayer || 20},00
+                </p>
+                <p className="text-[11px] text-slate-400">
+                  Assim que o gateway confirmar o pagamento, seu nome entrará imediatamente na lista de Jogadores Confirmados.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3 p-4 rounded-2xl bg-dark-950 border border-white/10">
+                <input
+                  type="text"
+                  placeholder="Número do Cartão •••• •••• •••• 4242"
+                  className="w-full bg-dark-900 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white"
+                />
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="text"
+                    placeholder="Validade (MM/AA)"
+                    className="w-full bg-dark-900 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white"
+                  />
+                  <input
+                    type="text"
+                    placeholder="CVV"
+                    className="w-full bg-dark-900 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white"
+                  />
+                </div>
+              </div>
+            )}
+
+            <button
+              type="button"
+              disabled={payingShare}
+              onClick={handleConfirmMatchPayment}
+              className="w-full py-3.5 rounded-xl bg-amber-400 hover:bg-amber-300 disabled:opacity-60 text-dark-950 font-display font-black text-sm shadow-[0_0_25px_rgba(251,191,36,0.4)] transition-all"
+            >
+              {payingShare
+                ? 'Confirmando com o Gateway...'
+                : `Confirmar Pagamento de R$ ${match.pricePerPlayer || 20},00`}
+            </button>
           </div>
         </div>
       )}

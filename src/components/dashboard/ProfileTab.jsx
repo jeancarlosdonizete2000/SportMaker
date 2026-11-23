@@ -104,6 +104,7 @@ export default function ProfileTab() {
 
   const [nickname, setNickname] = useState(user?.nickname || '');
   const [selectedAvatar, setSelectedAvatar] = useState(user?.avatar || '');
+  const [avatarScale, setAvatarScale] = useState(user?.avatarScale || 100);
   const [activeThemeIndex, setActiveThemeIndex] = useState(() => {
     const legacyMap = {
       'gold-toty': 'card-ouro-pro',
@@ -197,6 +198,7 @@ export default function ProfileTab() {
       await updateUserProfile({
         nickname: nickname.trim(),
         avatar: selectedAvatar,
+        avatarScale: Number(avatarScale) || 100,
         positionRole,
         customTag,
         cardThemeId: chosenTheme.id,
@@ -221,6 +223,7 @@ export default function ProfileTab() {
     name: user?.name || 'Atleta Sport Maker',
     nickname: nickname.trim(),
     avatar: selectedAvatar,
+    avatarScale: Number(avatarScale) || 100,
     ovr: user?.ovr ?? 0,
     matches: user?.matchesCount ?? 0,
     mvpCount: user?.mvpCount ?? 0,
@@ -437,8 +440,8 @@ export default function ProfileTab() {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-            {/* Left Customization Controls */}
-            <div className="lg:col-span-7 space-y-6">
+            {/* Left Customization Controls (abaixo do card no mobile, à esquerda no desktop) */}
+            <div className="order-2 lg:order-1 lg:col-span-7 space-y-6">
               <form
                 onSubmit={handleSaveProfile}
                 className="glass-card rounded-3xl p-6 border border-white/15 space-y-6"
@@ -535,6 +538,50 @@ export default function ProfileTab() {
                       <p className="text-[11px] text-slate-400">
                         Envie uma foto real do seu dispositivo. Caso não envie, suas iniciais serão exibidas no card.
                       </p>
+
+                      {/* Controle de Tamanho da Foto no Player Card */}
+                      <div className="pt-2 border-t border-white/10 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-bold text-slate-200">
+                            Tamanho da Foto no Player Card:
+                          </span>
+                          <span className="text-[11px] font-display font-black text-neon">
+                            {avatarScale}%
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <input
+                            type="range"
+                            min={70}
+                            max={140}
+                            step={5}
+                            value={avatarScale}
+                            onChange={(e) => setAvatarScale(Number(e.target.value))}
+                            className="w-full accent-neon cursor-pointer"
+                          />
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {[
+                            { label: 'Pequena (85%)', val: 85 },
+                            { label: 'Padrão (100%)', val: 100 },
+                            { label: 'Grande (115%)', val: 115 },
+                            { label: 'Extra (130%)', val: 130 },
+                          ].map((preset) => (
+                            <button
+                              key={preset.val}
+                              type="button"
+                              onClick={() => setAvatarScale(preset.val)}
+                              className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition ${
+                                Number(avatarScale) === preset.val
+                                  ? 'bg-neon text-dark-950 border-neon'
+                                  : 'bg-dark-900 text-slate-300 border-white/10 hover:border-white/30'
+                              }`}
+                            >
+                              {preset.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -699,8 +746,8 @@ export default function ProfileTab() {
               </form>
             </div>
 
-            {/* Right Live Player Card Preview */}
-            <div className="lg:col-span-5 flex justify-center">
+            {/* Right Live Player Card Preview (no topo no mobile para visualizar ao ajustar a foto) */}
+            <div className="order-1 lg:order-2 lg:col-span-5 flex justify-center">
               <PlayerCard
                 player={basePlayer}
                 theme={currentTheme}

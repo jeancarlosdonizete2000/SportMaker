@@ -1,6 +1,6 @@
-import React, { useState, useMemo, useEffect, useRef, lazy, Suspense } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, useNavigate, useLocation, NavLink } from 'react-router-dom';
-import { Search, Bell, MapPin, Navigation, X, Menu, ArrowLeft, LogOut } from 'lucide-react';
+import { Search, Bell, MapPin, Navigation, X, Menu, ArrowLeft, LogOut, Plus } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../context/AuthContext';
 import { useBooking } from '../hooks/useBooking';
@@ -10,6 +10,7 @@ import {
   calculateHaversineDistanceKm,
 } from '../services/locationService';
 import ArenasHomeTab from '../components/dashboard/ArenasHomeTab';
+import { getMatchViewKey } from '../components/dashboard/MyMatchesTab';
 import MobileBottomNav from '../components/layout/MobileBottomNav';
 import UserSidebar from '../components/layout/UserSidebar';
 import { TabPageSkeleton } from '../components/ui/SkeletonLoaders';
@@ -20,6 +21,7 @@ const NotificationsTab = lazy(() => import('../components/dashboard/Notification
 const FriendsTab = lazy(() => import('../components/dashboard/FriendsTab'));
 const ProfileTab = lazy(() => import('../components/dashboard/ProfileTab'));
 const ProSubscriptionTab = lazy(() => import('../components/dashboard/ProSubscriptionTab'));
+const TeamsTab = lazy(() => import('../components/dashboard/TeamsTab'));
 const AccountSettingsTab = lazy(() => import('../components/dashboard/AccountSettingsTab'));
 const ArenaDetailsPage = lazy(() => import('./ArenaDetailsPage'));
 const MatchDetailsPage = lazy(() => import('./MatchDetailsPage'));
@@ -27,6 +29,7 @@ const MatchEvaluationPage = lazy(() => import('./MatchEvaluationPage'));
 const BookingModal = lazy(() => import('../components/modals/BookingModal'));
 const CreateMatchModal = lazy(() => import('../components/modals/CreateMatchModal'));
 const LocationConsentModal = lazy(() => import('../components/modals/LocationConsentModal'));
+const CancelMatchModal = lazy(() => import('../components/modals/CancelMatchModal'));
 
 function TabLoader() {
   return <TabPageSkeleton />;
@@ -40,6 +43,8 @@ export default function UserHomePage({
   const navigate = useNavigate();
   const location = useLocation();
   const isProfileRoute = location.pathname.startsWith('/app/perfil');
+  const isMyMatchesRoute = location.pathname.startsWith('/app/minhas-partidas');
+  const isLobbiesRoute = location.pathname.startsWith('/app/lobbies');
 
   // Arenas Filter State (Inicializa instantaneamente do cache do navegador)
   const [selectedCategory, setSelectedCategory] = useState('all');
@@ -201,6 +206,44 @@ export default function UserHomePage({
     ownerService.getCachedPublicLobbies()
   );
   const [myMatches, setMyMatches] = useState(() => ownerService.getCachedMyMatches());
+  const viewedStorageKey = `sportmaker_viewed_matches_${user?._id || 'guest'}`;
+  const [viewedMatchKeys, setViewedMatchKeys] = useState(() => {
+    try {
+      const raw = localStorage.getItem(viewedStorageKey);
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(viewedStorageKey);
+      setViewedMatchKeys(raw ? JSON.parse(raw) : {});
+    } catch {
+      setViewedMatchKeys({});
+    }
+  }, [viewedStorageKey]);
+
+  const handleMarkMatchViewed = (matchKey) => {
+    if (!matchKey) return;
+    setViewedMatchKeys((prev) => {
+      if (prev[matchKey]) return prev;
+      const next = { ...prev, [matchKey]: true };
+      try {
+        localStorage.setItem(viewedStorageKey, JSON.stringify(next));
+      } catch {
+        // ignora erro de storage
+      }
+      return next;
+    });
+  };
+
+  const unreadMatchesCount = useMemo(
+    () => (myMatches || []).filter((m) => !viewedMatchKeys[getMatchViewKey(m)]).length,
+    [myMatches, viewedMatchKeys]
+  );
+
   const [notifications, setNotifications] = useState([]);
   const unreadNotificationsCount = useMemo(
     () => notifications.filter((n) => !n.read).length,
@@ -225,6 +268,10 @@ export default function UserHomePage({
       .map((m) => String(m.id))
   );
   const [createMatchModalOpen, setCreateMatchModalOpen] = useState(false);
+  const [matchToCancel, setMatchToCancel] = useState(null);
+  const [cancellingMatch, setCancellingMatch] = useState(false);
+  const [cancelMatchError, setCancelMatchError] = useState('');
+  const [redirectAfterCancel, setRedirectAfterCancel] = useState(false);
 
   // Booking Hook
   const {
@@ -322,8 +369,17 @@ export default function UserHomePage({
   };
 
   // Handle Confirming an Arena Booking and Adding to My Matches + MongoDB Owner Schedule
-  const handleConfirmArenaBooking = async () => {
+  const handleConfirmArenaBooking = async (chosenMaxPlayers) => {
     if (!activeBookingArena) return;
+    const resolvedTotalSlots =
+      Number(chosenMaxPlayers) ||
+      Number(activeBookingArena.maxPlayers) ||
+      Number(activeBookingArena.totalSlots) ||
+      14;
+    const resolvedPricePerPlayer = Math.max(
+      1,
+      Math.ceil((totalAmount || activeBookingArena.pricePerHour || 200) / resolvedTotalSlots)
+    );
     const slot =
       activeBookingArena.selectedSlotTime ||
       selectedSlots[activeBookingArena.id] ||
@@ -421,15 +477,17 @@ export default function UserHomePage({
       status: isPublicLobby
         ? 'Confirmada • Lobby Público Ativo'
         : 'Confirmada • Somente Amigos',
-      totalSlots: 14,
+      totalSlots: resolvedTotalSlots,
       filledSlots: 1,
-      pricePerPlayer: activeBookingArena.pricePerPlayer,
+      pricePerPlayer: resolvedPricePerPlayer,
       neededPositions: ['Qualquer Posição'],
       extras: [
         isPublicLobby ? '🌐 Partida Pública' : '🔒 Somente Amigos',
+        ...(splitWithFriends ? ['💳 Divisão de Valor (Gateway)'] : []),
         ...chosenProductNames,
       ],
       isPublicLobby,
+      splitWithFriends: Boolean(splitWithFriends),
     };
 
     try {
@@ -444,28 +502,94 @@ export default function UserHomePage({
           id: `book_${Date.now()}`,
           ...matchPayload,
           date: matchPayload.time,
-          playersCount: '1/14',
+          playersCount: `1/${resolvedTotalSlots}`,
         },
         ...prev,
       ]);
     }
   };
 
-  const handleCancelMatch = async (matchId) => {
-    await ownerService.cancelMatch(matchId).catch(() => {});
-    setMyMatches((prev) => prev.filter((m) => m.id !== matchId));
-    setPublicLobbies((prev) => prev.filter((l) => l.id !== matchId));
+  const handleRequestCancelMatch = (matchId, { redirectToMatches = false } = {}) => {
+    const target = myMatches.find((m) => String(m.id) === String(matchId));
+    if (!target) return false;
+    setCancelMatchError('');
+    setRedirectAfterCancel(Boolean(redirectToMatches));
+    setMatchToCancel(target);
+    return false;
   };
 
-  const handleMatchUpdated = (updatedMatch) => {
-    if (!updatedMatch || !updatedMatch.id) return;
-    setMyMatches((prev) =>
-      prev.map((m) => (String(m.id) === String(updatedMatch.id) ? updatedMatch : m))
-    );
-    setPublicLobbies((prev) =>
-      prev.map((l) => (String(l.id) === String(updatedMatch.id) ? updatedMatch : l))
-    );
+  const handleConfirmCancelMatch = async () => {
+    if (!matchToCancel) return;
+    const matchId = matchToCancel.id;
+    setCancellingMatch(true);
+    setCancelMatchError('');
+    try {
+      const res = await ownerService.cancelMatch(matchId);
+      if (res?.left) {
+        setMyMatches((prev) => prev.filter((m) => String(m.id) !== String(matchId)));
+        setRequestedLobbyIds((prev) => prev.filter((id) => String(id) !== String(matchId)));
+      } else if (res?.match) {
+        setMyMatches((prev) =>
+          prev.map((m) => (String(m.id) === String(matchId) ? res.match : m))
+        );
+      } else {
+        setMyMatches((prev) =>
+          prev.map((m) =>
+            String(m.id) === String(matchId)
+              ? { ...m, status: 'Cancelada pelo Organizador', isPublicLobby: false }
+              : m
+          )
+        );
+      }
+      setPublicLobbies((prev) => prev.filter((l) => String(l.id) !== String(matchId)));
+      // Recarrega as arenas sem cache para que o horário cancelado fique imediatamente livre na UI
+      ownerService
+        .getPublicArenas({ forceRefresh: true })
+        .then((list) => {
+          if (Array.isArray(list)) {
+            setDbArenas(list.map((a) => ({ ...a, id: a._id })));
+          }
+        })
+        .catch(() => {});
+
+      const shouldRedirect = redirectAfterCancel;
+      setMatchToCancel(null);
+      setRedirectAfterCancel(false);
+      if (shouldRedirect) {
+        navigate('/app/minhas-partidas');
+      }
+    } catch (err) {
+      setCancelMatchError(err.message || 'Não foi possível cancelar esta partida.');
+    } finally {
+      setCancellingMatch(false);
+    }
   };
+
+  const handleMatchUpdated = useCallback(
+    (updatedMatch) => {
+      if (!updatedMatch || !updatedMatch.id) return;
+      const uid = user?._id ? String(user._id) : '';
+      const isUserInMatch =
+        uid &&
+        (String(updatedMatch.hostId) === uid ||
+          (Array.isArray(updatedMatch.participants) &&
+            updatedMatch.participants.some((p) => String(p.userId) === uid)));
+
+      setMyMatches((prev) => {
+        const exists = prev.some((m) => String(m.id) === String(updatedMatch.id));
+        if (exists) {
+          return prev.map((m) =>
+            String(m.id) === String(updatedMatch.id) ? updatedMatch : m
+          );
+        }
+        return isUserInMatch ? [updatedMatch, ...prev] : prev;
+      });
+      setPublicLobbies((prev) =>
+        prev.map((l) => (String(l.id) === String(updatedMatch.id) ? updatedMatch : l))
+      );
+    },
+    [user?._id]
+  );
 
   const handleEvaluationComplete = (matchId, evalSummary) => {
     setMyMatches((prev) =>
@@ -475,6 +599,16 @@ export default function UserHomePage({
               ...m,
               evaluated: true,
               evaluationStars: evalSummary.arenaStars,
+              evaluationSummary: {
+                arenaStars: evalSummary.arenaStars,
+                arenaTierLabel: evalSummary.arenaTierLabel,
+                arenaComment: evalSummary.arenaComment || '',
+                mvpPlayerId: evalSummary.mvpPlayerId || '',
+                mvpPlayerName: evalSummary.mvpPlayerName || '',
+                mvpPlayerAvatar: evalSummary.mvpPlayerAvatar || '',
+                mvpScore: evalSummary.mvpScore ?? 9.5,
+                playerRatings: evalSummary.playerRatings || [],
+              },
             }
           : m
       )
@@ -506,7 +640,7 @@ export default function UserHomePage({
     <div className="min-h-screen bg-dark-950 text-slate-100 relative pb-24 md:pb-12">
       {/* Left Sidebar Navigation for Desktop (md and up) */}
       <UserSidebar
-        myMatchesCount={myMatches.length}
+        myMatchesCount={unreadMatchesCount}
         unreadNotificationsCount={unreadNotificationsCount}
         user={user}
         onLogout={handleLogout}
@@ -519,9 +653,19 @@ export default function UserHomePage({
         }`}
       >
         <div className="px-4 h-16 grid grid-cols-3 items-center">
-          {/* Esquerda: Lupa (ocultada na página Meu Perfil) */}
+          {/* Esquerda: Sinal de + em Minhas Partidas e Lobbies, Lupa nas demais abas (ocultada em Meu Perfil) */}
           <div className="flex items-center justify-start">
-            {!isProfileRoute && (
+            {isMyMatchesRoute || isLobbiesRoute ? (
+              <motion.button
+                type="button"
+                whileTap={{ scale: 0.88 }}
+                onClick={() => navigate('/app/arenas')}
+                aria-label="Agendar ou criar partida"
+                className="p-2.5 rounded-xl border bg-white/5 text-slate-200 border-white/10 hover:text-neon transition-colors"
+              >
+                <Plus className="w-5 h-5" />
+              </motion.button>
+            ) : !isProfileRoute ? (
               <motion.button
                 type="button"
                 whileTap={{ scale: 0.88 }}
@@ -539,7 +683,7 @@ export default function UserHomePage({
                   <Search className="w-5 h-5" />
                 )}
               </motion.button>
-            )}
+            ) : null}
           </div>
 
           {/* Centro: Logo Sport Maker */}
@@ -708,7 +852,9 @@ export default function UserHomePage({
                   <MyMatchesTab
                     myMatches={myMatches}
                     onOpenCreateMatch={() => setCreateMatchModalOpen(true)}
-                    onCancelMatch={handleCancelMatch}
+                    onCancelMatch={(id) => handleRequestCancelMatch(id)}
+                    viewedMatchKeys={viewedMatchKeys}
+                    onMarkMatchViewed={handleMarkMatchViewed}
                   />
                 }
               />
@@ -719,7 +865,9 @@ export default function UserHomePage({
                     myMatches={myMatches}
                     arenas={allArenas}
                     onMatchUpdated={handleMatchUpdated}
-                    onCancelMatch={handleCancelMatch}
+                    onCancelMatch={(id) =>
+                      handleRequestCancelMatch(id, { redirectToMatches: true })
+                    }
                   />
                 }
               />
@@ -742,6 +890,7 @@ export default function UserHomePage({
                   />
                 }
               />
+              <Route path="times" element={<TeamsTab />} />
               <Route path="amigos" element={<FriendsTab />} />
               <Route path="perfil" element={<ProfileTab />} />
               <Route path="seja-pro" element={<ProSubscriptionTab />} />
@@ -754,7 +903,7 @@ export default function UserHomePage({
 
       {/* Bottom Tab Bar Exclusiva para Mobile */}
       <MobileBottomNav
-        myMatchesCount={myMatches.length}
+        myMatchesCount={unreadMatchesCount}
         unreadNotificationsCount={unreadNotificationsCount}
       />
 
@@ -832,6 +981,25 @@ export default function UserHomePage({
             currentLocation={userLocation}
             initialConsentAccepted={locationConsentAccepted}
             onConfirmLocation={handleConfirmUserLocation}
+          />
+        )}
+
+        {matchToCancel && (
+          <CancelMatchModal
+            match={matchToCancel}
+            isHost={
+              Boolean(user?._id && String(matchToCancel.hostId) === String(user._id)) ||
+              String(matchToCancel.role || '').toLowerCase().includes('organizador')
+            }
+            loading={cancellingMatch}
+            errorMsg={cancelMatchError}
+            onClose={() => {
+              if (!cancellingMatch) {
+                setMatchToCancel(null);
+                setCancelMatchError('');
+              }
+            }}
+            onConfirm={handleConfirmCancelMatch}
           />
         )}
       </Suspense>

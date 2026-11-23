@@ -391,23 +391,35 @@ export const ownerService = {
   },
 
   /**
-   * Cancela ou sai de uma partida no MongoDB e atualiza o cache local
+   * Cancela (Host) ou sai (Participante) de uma partida no MongoDB e atualiza o cache local
    */
   async cancelMatch(matchId) {
     const response = await fetch(`${MONGO_CONFIG.restApiUrl}/matches/${matchId}`, {
       method: 'DELETE',
       headers: getAuthHeaders(),
     });
+    const data = await response.json().catch(() => ({ ok: response.ok }));
+    if (!response.ok) {
+      throw new Error(data.message || 'Não foi possível cancelar a partida.');
+    }
 
+    clientCache.invalidate(`match_detail_${matchId}`, { userScoped: true });
     clientCache.invalidate('my_matches', { userScoped: true });
     clientCache.invalidate('public_lobbies', { userScoped: false });
-    return response.ok;
+    clientCache.invalidate('public_arenas', { userScoped: false });
+    return data;
   },
 
   /**
-   * Busca os detalhes completos de uma partida no MongoDB (arena, jogadores confirmados e solicitações pendentes)
+   * Busca os detalhes completos de uma partida no MongoDB (com cache de 15s e deduplicação)
    */
-  async getMatchById(matchId) {
+  async getMatchById(matchId, { forceRefresh = false } = {}) {
+    const cacheKey = `match_detail_${matchId}`;
+    if (!forceRefresh) {
+      const cached = clientCache.get(cacheKey, { userScoped: true });
+      if (cached) return cached;
+    }
+
     const response = await fetch(`${MONGO_CONFIG.restApiUrl}/matches/${matchId}`, {
       method: 'GET',
       headers: getAuthHeaders(),
@@ -415,6 +427,9 @@ export const ownerService = {
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
       throw new Error(data.message || 'Erro ao carregar detalhes da partida.');
+    }
+    if (data.match) {
+      clientCache.set(cacheKey, data.match, { ttlMs: 15000, userScoped: true });
     }
     return data.match;
   },
@@ -436,6 +451,30 @@ export const ownerService = {
       throw new Error(data.message || 'Erro ao responder solicitação.');
     }
 
+    clientCache.invalidate(`match_detail_${matchId}`, { userScoped: true });
+    clientCache.invalidate('my_matches', { userScoped: true });
+    clientCache.invalidate('public_lobbies', { userScoped: false });
+    return data;
+  },
+
+  /**
+   * Realiza o pagamento da cota da partida após o organizador aceitar a solicitação
+   */
+  async payMatchShare(matchId, { paymentMethod = 'pix', transactionId } = {}) {
+    const response = await fetch(
+      `${MONGO_CONFIG.restApiUrl}/matches/${matchId}/pay-share`,
+      {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ paymentMethod, transactionId }),
+      }
+    );
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data.message || 'Erro ao confirmar pagamento da partida.');
+    }
+
+    clientCache.invalidate(`match_detail_${matchId}`, { userScoped: true });
     clientCache.invalidate('my_matches', { userScoped: true });
     clientCache.invalidate('public_lobbies', { userScoped: false });
     return data;

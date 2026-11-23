@@ -10,6 +10,7 @@ import {
   LogOut,
   Crown,
   Bell,
+  Shield,
 } from 'lucide-react';
 
 export const APP_NAV_TABS = [

@@ -15,6 +15,7 @@ import {
 import { MONGO_CONFIG } from '../services/mongoClient';
 import { ownerService } from '../services/ownerService';
 import { clientCache } from '../utils/clientCache';
+import { isEvaluationClosed } from '../utils/matchTimeUtils';
 
 const ARENA_TIERS = [
   {
@@ -217,10 +218,17 @@ export default function MatchEvaluationPage({ myMatches = [], onEvaluationComple
       clientCache.invalidate('friends_data', { userScoped: true });
 
       if (onEvaluationComplete && match?.id) {
+        const mvpObj =
+          playerEvaluations.find((p) => p.id === mvpPlayerId) || playerEvaluations[0];
         onEvaluationComplete(match.id, {
           arenaStars,
           arenaTierLabel: selectedTier.title,
+          arenaComment,
           mvpPlayerId,
+          mvpPlayerName: mvpObj?.name || '',
+          mvpPlayerAvatar: mvpObj?.avatar || '',
+          mvpScore: mvpObj?.score ?? 9.5,
+          playerRatings: playerEvaluations,
           updatedArena: data.updatedArena,
           updatedUser: data.updatedUser,
         });
@@ -238,6 +246,28 @@ export default function MatchEvaluationPage({ myMatches = [], onEvaluationComple
       setSubmitting(false);
     }
   };
+
+  if (match && !match.evaluated && isEvaluationClosed(match) && !submittedResult) {
+    return (
+      <div className="max-w-xl mx-auto py-10">
+        <div className="glass-card rounded-3xl p-8 border border-white/15 text-center space-y-4">
+          <h2 className="font-display font-black text-2xl text-white">
+            Avaliação da Partida Encerrada
+          </h2>
+          <p className="text-xs sm:text-sm text-slate-400">
+            O prazo de 1 hora após o encerramento da partida expirou ou todos os jogadores participantes já enviaram suas avaliações.
+          </p>
+          <button
+            type="button"
+            onClick={() => navigate('/app/minhas-partidas')}
+            className="px-5 py-2.5 rounded-xl bg-neon text-dark-950 font-display font-extrabold text-xs"
+          >
+            Voltar para Minhas Partidas
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (submittedResult) {
     return (

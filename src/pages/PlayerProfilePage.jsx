@@ -116,6 +116,7 @@ export default function PlayerProfilePage() {
     role: player.positionRole || player.role || 'Atleta Sport Maker',
     ovr: player.ovr || 78,
     avatar: player.avatar || '',
+    avatarScale: player.avatarScale || 100,
     matches: player.matches ?? 0,
     mvpCount: player.mvpCount ?? 0,
     friendsCount: player.friendsCount ?? 0,

@@ -47,6 +47,7 @@ export default function OwnerArenasConfigTab({
   const [description, setDescription] = useState('');
   const [pricePerHour, setPricePerHour] = useState(200);
   const [pricePerPlayer, setPricePerPlayer] = useState(20);
+  const [cancellationDeadlineHours, setCancellationDeadlineHours] = useState(0);
   const [image, setImage] = useState('');
   const [gallery, setGallery] = useState([]);
   const [amenitiesText, setAmenitiesText] = useState('');
@@ -92,6 +93,7 @@ export default function OwnerArenasConfigTab({
       );
       setPricePerHour(200);
       setPricePerPlayer(20);
+      setCancellationDeadlineHours(0);
       const defaultCover =
         'https://images.unsplash.com/photo-1574629810360-7efbbe195018?auto=format&fit=crop&w=1000&q=80';
       setImage(defaultCover);
@@ -148,6 +150,9 @@ export default function OwnerArenasConfigTab({
       setDescription(currentArena.description || '');
       setPricePerHour(currentArena.pricePerHour || 200);
       setPricePerPlayer(currentArena.pricePerPlayer || 20);
+      setCancellationDeadlineHours(
+        Number(currentArena.cancellationDeadlineHours) || 0
+      );
       const initialCover = currentArena.image || currentArena.gallery?.[0] || '';
       const initialGallery =
         Array.isArray(currentArena.gallery) && currentArena.gallery.length > 0
@@ -335,6 +340,7 @@ export default function OwnerArenasConfigTab({
       description: description.trim(),
       pricePerHour: Number(pricePerHour) || 200,
       pricePerPlayer: Number(pricePerPlayer) || 20,
+      cancellationDeadlineHours: Math.max(0, Number(cancellationDeadlineHours) || 0),
       image: image || gallery[0] || '',
       gallery:
         gallery.length > 0
@@ -635,6 +641,66 @@ export default function OwnerArenasConfigTab({
                     className="w-full bg-transparent text-sm text-white focus:outline-none"
                   />
                 </div>
+              </div>
+
+              <div className="sm:col-span-2 p-4 rounded-2xl bg-dark-950/70 border border-amber-400/25 space-y-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <label className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+                    <Clock className="w-4 h-4 text-amber-400" />
+                    Período Máximo para Cancelamento (antes da partida)
+                  </label>
+                  <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-amber-400/15 text-amber-300 border border-amber-400/30">
+                    {Number(cancellationDeadlineHours) > 0
+                      ? `Até ${cancellationDeadlineHours}h antes do jogo`
+                      : 'Sem prazo limite (qualquer horário)'}
+                  </span>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  {[
+                    { label: 'Sem limite', value: 0 },
+                    { label: '1h', value: 1 },
+                    { label: '2h', value: 2 },
+                    { label: '4h', value: 4 },
+                    { label: '6h', value: 6 },
+                    { label: '12h', value: 12 },
+                    { label: '24h', value: 24 },
+                    { label: '48h', value: 48 },
+                  ].map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setCancellationDeadlineHours(opt.value)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${
+                        Number(cancellationDeadlineHours) === opt.value
+                          ? 'bg-amber-400 text-dark-950 border-amber-300'
+                          : 'bg-dark-900 text-slate-300 border-white/10 hover:border-amber-400/40'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+
+                  <div className="flex items-center gap-1.5 ml-auto">
+                    <span className="text-[11px] text-slate-400">Personalizado (h):</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={168}
+                      value={cancellationDeadlineHours}
+                      onChange={(e) =>
+                        setCancellationDeadlineHours(
+                          Math.max(0, Math.min(168, Number(e.target.value) || 0))
+                        )
+                      }
+                      className="w-16 bg-dark-900 border border-white/15 rounded-xl px-2.5 py-1.5 text-xs text-white text-center font-bold focus:outline-none focus:border-amber-400"
+                    />
+                  </div>
+                </div>
+
+                <p className="text-[11px] text-slate-400">
+                  Define com quantas horas de antecedência o organizador ainda pode cancelar a reserva. Após esse prazo, o cancelamento pelo atleta é bloqueado automaticamente.
+                </p>
               </div>
 
               <div className="sm:col-span-2">

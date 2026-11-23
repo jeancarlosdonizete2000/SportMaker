@@ -1,5 +1,5 @@
-import React from 'react';
-import { X, Check, CheckCircle2, Crown, Sparkles } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, Check, CheckCircle2, Crown, Sparkles, Users } from 'lucide-react';
 import { isOfficialBallProduct } from '../../hooks/useBooking';
 
 export default function BookingModal({
@@ -15,6 +15,14 @@ export default function BookingModal({
   onToggleSplit,
   onConfirm,
 }) {
+  const [totalPlayers, setTotalPlayers] = useState(
+    Number(arena?.maxPlayers || arena?.totalSlots) || 14
+  );
+
+  useEffect(() => {
+    setTotalPlayers(Number(arena?.maxPlayers || arena?.totalSlots) || 14);
+  }, [arena?.maxPlayers, arena?.totalSlots]);
+
   if (!arena) return null;
 
   const discountedCourtPrice = isPro
@@ -130,6 +138,44 @@ export default function BookingModal({
               </div>
             </div>
 
+            {/* Quantidade de Jogadores que Podem Entrar na Partida */}
+            <div className="p-3.5 rounded-2xl bg-dark-950 border border-white/10 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <Users className="w-4 h-4 text-neon" /> Quantos jogadores podem entrar:
+                </span>
+                <span className="text-xs font-display font-black text-neon">
+                  {totalPlayers} atletas
+                </span>
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {[4, 8, 10, 12, 14, 16, 22].map((num) => (
+                  <button
+                    key={num}
+                    type="button"
+                    onClick={() => setTotalPlayers(num)}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition-all ${
+                      totalPlayers === num
+                        ? 'bg-neon text-dark-950 border-neon'
+                        : 'bg-dark-900 text-slate-300 border-white/10 hover:border-white/30'
+                    }`}
+                  >
+                    {num}
+                  </button>
+                ))}
+                <input
+                  type="number"
+                  min={2}
+                  max={40}
+                  value={totalPlayers}
+                  onChange={(e) =>
+                    setTotalPlayers(Math.max(2, Math.min(40, Number(e.target.value) || 2)))
+                  }
+                  className="w-14 bg-dark-900 border border-white/15 rounded-lg px-2 py-1 text-xs font-display font-black text-neon text-center focus:outline-none focus:border-neon"
+                />
+              </div>
+            </div>
+
             {/* Split Payment Option */}
             <div className="p-3.5 rounded-2xl bg-dark-950 border border-white/10 flex items-center justify-between">
               <div>
@@ -161,13 +207,13 @@ export default function BookingModal({
                 </span>
                 {splitWithFriends && (
                   <span className="block text-xs text-neon font-bold">
-                    ou R$ {Math.round(totalAmount / 10)},00 por atleta (10x)
+                    ou R$ {Math.max(1, Math.ceil(totalAmount / totalPlayers))},00 por atleta ({totalPlayers}x)
                   </span>
                 )}
               </div>
 
               <button
-                onClick={onConfirm}
+                onClick={() => onConfirm(totalPlayers)}
                 className="px-6 py-3.5 rounded-xl bg-neon hover:bg-neon-400 text-dark-950 font-display font-extrabold text-sm shadow-neon transition-all"
               >
                 Confirmar Reserva

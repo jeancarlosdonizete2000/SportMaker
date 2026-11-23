@@ -470,16 +470,18 @@ export default function PlayerCard({ player, theme, customTag }) {
                                     : 'border-white/25'
                             }`
                       }
-                      style={
-                        theme.bgImage
+                      style={{
+                        transform: `scale(${(player.avatarScale || 100) / 100})`,
+                        transformOrigin: 'center bottom',
+                        ...(theme.bgImage
                           ? {
                               WebkitMaskImage:
                                 'linear-gradient(to bottom, black 70%, transparent 100%)',
                               maskImage:
                                 'linear-gradient(to bottom, black 70%, transparent 100%)',
                             }
-                          : undefined
-                      }
+                          : {}),
+                      }}
                     />
                   ) : (
                     <div

@@ -231,4 +231,58 @@ export const authService = {
     }
     throw new Error('Sessão inválida para ativar assinatura.');
   },
+
+  async cancelProSubscription(token) {
+    const activeToken = token || this.getStoredSession()?.token;
+    const response = await fetch(`${MONGO_CONFIG.restApiUrl}/subscription/cancel`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(activeToken ? { Authorization: `Bearer ${activeToken}` } : {}),
+      },
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data.message || 'Erro ao cancelar assinatura PRO.');
+    }
+    if (data.user && activeToken) {
+      this.saveSession(data.user, activeToken);
+    }
+    return data.user;
+  },
+
+  async changePassword({ currentPassword, newPassword }, token) {
+    const activeToken = token || this.getStoredSession()?.token;
+    const response = await fetch(`${MONGO_CONFIG.restApiUrl}/auth/password`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(activeToken ? { Authorization: `Bearer ${activeToken}` } : {}),
+      },
+      body: JSON.stringify({ currentPassword, newPassword }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data.message || 'Não foi possível alterar a senha.');
+    }
+    return data;
+  },
+
+  async deleteAccount(password, token) {
+    const activeToken = token || this.getStoredSession()?.token;
+    const response = await fetch(`${MONGO_CONFIG.restApiUrl}/auth/account`, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(activeToken ? { Authorization: `Bearer ${activeToken}` } : {}),
+      },
+      body: JSON.stringify({ password }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data.message || 'Não foi possível apagar a conta.');
+    }
+    this.clearSession();
+    return data;
+  },
 };

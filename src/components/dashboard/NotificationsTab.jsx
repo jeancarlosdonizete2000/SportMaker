@@ -81,12 +81,23 @@ export default function NotificationsTab({
             const isCancelled = notif.type === 'match_cancelled';
             const isJoinRequest = notif.type === 'match_join_request';
             const isMatchInvite = notif.type === 'match_invite';
+            const isPaymentRequired = notif.type === 'match_payment_required';
+            const isRequestAccepted = notif.type === 'match_request_accepted';
+            const hasMatchAction = Boolean(
+              notif.matchId &&
+                (isJoinRequest ||
+                  isMatchInvite ||
+                  isPaymentRequired ||
+                  isRequestAccepted ||
+                  notif.type === 'match_payment_confirmed' ||
+                  notif.type === 'match_full')
+            );
             return (
               <div
                 key={notif.id || notif._id}
                 onClick={() => {
                   if (!notif.read && onMarkRead) onMarkRead(notif.id || notif._id);
-                  if ((isJoinRequest || isMatchInvite) && notif.matchId) {
+                  if (hasMatchAction) {
                     navigate(`/app/partida/${notif.matchId}`);
                   }
                 }}
@@ -165,7 +176,7 @@ export default function NotificationsTab({
                                 : 'Reembolso integral garantido'}
                             </span>
                           )}
-                          {(isJoinRequest || isMatchInvite) && notif.matchId && (
+                          {hasMatchAction && (
                             <button
                               type="button"
                               onClick={(e) => {
@@ -173,12 +184,20 @@ export default function NotificationsTab({
                                 if (!notif.read && onMarkRead) onMarkRead(notif.id || notif._id);
                                 navigate(`/app/partida/${notif.matchId}`);
                               }}
-                              className="text-[11px] px-3 py-1 rounded-lg bg-neon hover:bg-neon-400 text-dark-950 font-display font-extrabold flex items-center gap-1 transition-all"
+                              className={`text-[11px] px-3 py-1 rounded-lg font-display font-extrabold flex items-center gap-1 transition-all ${
+                                isPaymentRequired
+                                  ? 'bg-amber-400 hover:bg-amber-300 text-dark-950'
+                                  : 'bg-neon hover:bg-neon-400 text-dark-950'
+                              }`}
                             >
                               <span>
-                                {isMatchInvite
-                                  ? 'Ver Partida e Participar'
-                                  : 'Ver e Responder Solicitação'}
+                                {isPaymentRequired
+                                  ? 'Realizar Pagamento'
+                                  : isMatchInvite
+                                    ? 'Ver Partida e Participar'
+                                    : isJoinRequest
+                                      ? 'Ver e Responder Solicitação'
+                                      : 'Ver Partida'}
                               </span>
                               <ChevronRight className="w-3.5 h-3.5" />
                             </button>

@@ -8,9 +8,11 @@ import {
   useParams,
 } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { useGlobalModalScrollLock } from './hooks/useGlobalModalScrollLock';
 import HomePage from './pages/HomePage';
 import MainLayout from './components/layout/MainLayout';
 import { FullAppSkeleton } from './components/ui/SkeletonLoaders';
+import GlobalLoadingIndicator from './components/ui/GlobalLoadingIndicator';
 
 const LoginPage = lazy(() => import('./pages/LoginPage'));
 const UserHomePage = lazy(() => import('./pages/UserHomePage'));
@@ -239,8 +241,10 @@ function AppRoutes() {
 }
 
 export default function App() {
+  useGlobalModalScrollLock();
   return (
     <AuthProvider>
+      <GlobalLoadingIndicator />
       <BrowserRouter>
         <Suspense fallback={null}>
           <TermsOfServiceModal />

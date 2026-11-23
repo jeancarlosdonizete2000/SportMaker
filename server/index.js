@@ -81,6 +81,7 @@ const UserSchema = new mongoose.Schema(
     ovr: { type: Number, default: 0 },
     pixKey: { type: String, default: '' },
     avatar: { type: String, default: '' },
+    avatarScale: { type: Number, default: 100 },
     // Controle de Assinatura PRO (Liberado apenas após confirmação de pagamento)
     isPro: { type: Boolean, default: false },
     proPlan: { type: String, enum: [null, 'monthly', 'annual'], default: null },
@@ -148,6 +149,7 @@ const MatchSchema = new mongoose.Schema(
     neededPositions: { type: [String], default: [] },
     extras: { type: [String], default: [] },
     isPublicLobby: { type: Boolean, default: true },
+    splitWithFriends: { type: Boolean, default: false },
     status: { type: String, default: 'Confirmada' },
     invitedUserIds: { type: [String], default: [] },
     participants: {
@@ -161,15 +163,40 @@ const MatchSchema = new mongoose.Schema(
           status: { type: String, default: 'Confirmada' },
           requestStatus: {
             type: String,
-            enum: ['approved', 'pending', 'rejected'],
+            enum: ['approved', 'pending', 'awaiting_payment', 'rejected'],
             default: 'approved',
           },
           isPro: { type: Boolean, default: false },
+          paymentConfirmed: { type: Boolean, default: false },
+          paymentTransactionId: { type: String, default: '' },
           evaluated: { type: Boolean, default: false },
           evaluationStars: { type: Number, default: null },
+          matchScore: { type: Number, default: null },
+          matchBadges: { type: [String], default: [] },
         },
       ],
       default: [],
+    },
+    evaluationSummary: {
+      arenaStars: { type: Number, default: null },
+      arenaTierLabel: { type: String, default: '' },
+      arenaComment: { type: String, default: '' },
+      mvpPlayerId: { type: String, default: '' },
+      mvpPlayerName: { type: String, default: '' },
+      mvpPlayerAvatar: { type: String, default: '' },
+      mvpScore: { type: Number, default: null },
+      playerRatings: {
+        type: [
+          {
+            id: { type: String },
+            name: { type: String },
+            avatar: { type: String },
+            score: { type: Number },
+            badges: { type: [String], default: [] },
+          },
+        ],
+        default: [],
+      },
     },
   },
   { timestamps: true }
@@ -221,6 +248,7 @@ const ArenaSchema = new mongoose.Schema(
     },
     pricePerHour: { type: Number, default: 200 },
     pricePerPlayer: { type: Number, default: 20 },
+    cancellationDeadlineHours: { type: Number, default: 0 },
     image: {
       type: String,
       default:
@@ -711,7 +739,9 @@ app.put('/api/auth/profile', async (req, res) => {
     const {
       name,
       nickname,
+      email,
       avatar,
+      avatarScale,
       positionRole,
       customTag,
       cardThemeId,
@@ -722,7 +752,21 @@ app.put('/api/auth/profile', async (req, res) => {
     const updates = {};
     if (typeof name === 'string' && name.trim()) updates.name = name.trim();
     if (typeof nickname === 'string') updates.nickname = nickname.trim();
+    if (typeof email === 'string' && email.trim()) {
+      const normalizedEmail = email.toLowerCase().trim();
+      const existing = await User.findOne({
+        email: normalizedEmail,
+        _id: { $ne: decoded.sub },
+      });
+      if (existing) {
+        return res.status(409).json({ message: 'Este e-mail já está em uso por outra conta.' });
+      }
+      updates.email = normalizedEmail;
+    }
     if (typeof avatar === 'string') updates.avatar = avatar.trim();
+    if (typeof avatarScale === 'number' && !Number.isNaN(avatarScale)) {
+      updates.avatarScale = Math.max(60, Math.min(150, Math.round(avatarScale)));
+    }
     if (typeof positionRole === 'string') updates.positionRole = positionRole;
     if (typeof customTag === 'string') updates.customTag = customTag;
     if (typeof cardThemeId === 'string') updates.cardThemeId = cardThemeId;
@@ -801,6 +845,133 @@ app.post('/api/subscription/confirm-payment', async (req, res) => {
     });
   } catch (err) {
     return res.status(500).json({ message: err.message || 'Erro ao confirmar assinatura PRO.' });
+  }
+});
+
+// POST /api/subscription/cancel - Cancela a assinatura Sport Maker PRO do usuário
+app.post('/api/subscription/cancel', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization || '';
+    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+    const decoded = token ? verifyJwtToken(token) : null;
+    if (!decoded || !decoded.sub) {
+      return res.status(401).json({ message: 'Não autorizado.' });
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(
+      decoded.sub,
+      {
+        isPro: false,
+        proPlan: null,
+        proStatus: 'inactive',
+      },
+      { new: true }
+    );
+
+    if (!updatedUser) {
+      return res.status(404).json({ message: 'Usuário não encontrado.' });
+    }
+
+    return res.json({
+      ok: true,
+      message: 'Assinatura Sport Maker PRO cancelada com sucesso.',
+      user: sanitizeUser(updatedUser),
+    });
+  } catch (err) {
+    return res.status(500).json({ message: err.message || 'Erro ao cancelar assinatura PRO.' });
+  }
+});
+
+// PUT /api/auth/password - Altera a senha do usuário validando a senha atual
+app.put('/api/auth/password', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization || '';
+    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+    const decoded = token ? verifyJwtToken(token) : null;
+    if (!decoded || !decoded.sub) {
+      return res.status(401).json({ message: 'Não autorizado.' });
+    }
+
+    const { currentPassword, newPassword } = req.body || {};
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ message: 'Informe a senha atual e a nova senha.' });
+    }
+    if (String(newPassword).length < 6) {
+      return res.status(400).json({ message: 'A nova senha deve ter pelo menos 6 caracteres.' });
+    }
+
+    const user = await User.findById(decoded.sub);
+    if (!user) {
+      return res.status(404).json({ message: 'Usuário não encontrado.' });
+    }
+
+    const isValid = await verifyPassword(currentPassword, user.passwordHash);
+    if (!isValid) {
+      return res.status(401).json({ message: 'A senha atual está incorreta.' });
+    }
+
+    user.passwordHash = await hashPassword(newPassword);
+    await user.save();
+
+    return res.json({ ok: true, message: 'Senha alterada com sucesso!' });
+  } catch (err) {
+    return res.status(500).json({ message: err.message || 'Erro ao alterar senha.' });
+  }
+});
+
+// DELETE /api/auth/account - Exige senha, cancela assinatura PRO se ativa e apaga a conta permanentemente
+app.delete('/api/auth/account', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization || '';
+    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+    const decoded = token ? verifyJwtToken(token) : null;
+    if (!decoded || !decoded.sub) {
+      return res.status(401).json({ message: 'Não autorizado.' });
+    }
+
+    const { password } = req.body || {};
+    if (!password) {
+      return res.status(400).json({ message: 'Digite sua senha para confirmar a exclusão da conta.' });
+    }
+
+    const user = await User.findById(decoded.sub);
+    if (!user) {
+      return res.status(404).json({ message: 'Usuário não encontrado.' });
+    }
+
+    const isValid = await verifyPassword(password, user.passwordHash);
+    if (!isValid) {
+      return res.status(401).json({ message: 'Senha incorreta. A conta não foi excluída.' });
+    }
+
+    // Se tiver assinatura PRO ativa, cancela antes de remover o registro
+    if (user.isPro || user.proStatus === 'active') {
+      user.isPro = false;
+      user.proPlan = null;
+      user.proStatus = 'inactive';
+      await user.save();
+    }
+
+    const uid = String(user._id);
+    await User.updateMany(
+      {},
+      {
+        $pull: {
+          friends: uid,
+          friendRequestsReceived: uid,
+          friendRequestsSent: uid,
+        },
+      }
+    );
+
+    await User.findByIdAndDelete(user._id);
+
+    return res.json({
+      ok: true,
+      message: 'Assinatura cancelada e conta apagada permanentemente.',
+    });
+  } catch (err) {
+    return res.status(500).json({ message: err.message || 'Erro ao apagar conta.' });
   }
 });
 
@@ -891,7 +1062,56 @@ function invalidateServerArenasCache() {
   serverArenasCache = { data: null, expiresAt: 0 };
 }
 
-// GET /api/arenas - Lista arenas cadastradas no MongoDB + horários já reservados (bookedSlots)
+// Helper: Converte qualquer dateLabel ("Hoje (23/11/2026)", "Amanhã (24/11)", "2026-11-23", "Hoje")
+// na data ISO exata YYYY-MM-DD usando createdAt como referência caso não haja números na string
+function resolveBookingIsoDate(dateLabel = '', createdAt = null) {
+  const raw = String(dateLabel || '').trim();
+  const base =
+    createdAt && !Number.isNaN(new Date(createdAt).getTime())
+      ? new Date(createdAt)
+      : new Date();
+
+  // 1. DD/MM/YYYY
+  const fullBr = raw.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+  if (fullBr) {
+    const [, dd, mm, yyyy] = fullBr;
+    return `${yyyy}-${mm}-${dd}`;
+  }
+
+  // 2. YYYY-MM-DD
+  const iso = raw.match(/(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) {
+    return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  }
+
+  // 3. DD/MM
+  const shortBr = raw.match(/(\d{2})\/(\d{2})/);
+  if (shortBr) {
+    const [, dd, mm] = shortBr;
+    return `${base.getFullYear()}-${mm}-${dd}`;
+  }
+
+  // 4. Apenas "Amanhã" ou "Hoje" sem números -> usa a data em que o agendamento foi criado
+  const lower = raw.toLowerCase();
+  const target = new Date(base.getFullYear(), base.getMonth(), base.getDate());
+  if (lower.includes('amanh')) {
+    target.setDate(target.getDate() + 1);
+  }
+  const y = target.getFullYear();
+  const m = String(target.getMonth() + 1).padStart(2, '0');
+  const d = String(target.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function getServerTodayIso() {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+// GET /api/arenas - Lista arenas cadastradas no MongoDB + horários já reservados (bookedSlots apenas de hoje em diante)
 app.get('/api/arenas', async (req, res) => {
   try {
     const now = Date.now();
@@ -903,12 +1123,17 @@ app.get('/api/arenas', async (req, res) => {
     const [arenas, activeBookings] = await Promise.all([
       Arena.find().sort({ createdAt: -1 }).lean(),
       Booking.find({ bookingStatus: { $ne: 'cancelled' } })
-        .select('arenaId courtId courtName dateLabel slotTime')
+        .select('arenaId courtId courtName dateLabel slotTime createdAt')
         .lean(),
     ]);
 
+    const todayIso = getServerTodayIso();
     const bookingsByArena = new Map();
     for (const b of activeBookings) {
+      const isoDate = resolveBookingIsoDate(b.dateLabel, b.createdAt);
+      // Ignora agendamentos de dias anteriores para nunca travar horários de dias seguintes
+      if (isoDate < todayIso) continue;
+
       const aid = String(b.arenaId);
       if (!bookingsByArena.has(aid)) {
         bookingsByArena.set(aid, []);
@@ -916,7 +1141,8 @@ app.get('/api/arenas', async (req, res) => {
       bookingsByArena.get(aid).push({
         courtId: b.courtId || 'c1',
         courtName: b.courtName || '',
-        dateLabel: b.dateLabel || 'Hoje',
+        dateLabel: b.dateLabel || isoDate,
+        isoDate,
         slotTime: b.slotTime,
       });
     }
@@ -946,15 +1172,22 @@ app.get('/api/arenas/:id/booked-slots', async (req, res) => {
     }
     const activeBookings = await Booking.find(
       { arenaId, bookingStatus: { $ne: 'cancelled' } },
-      { courtId: 1, courtName: 1, dateLabel: 1, slotTime: 1 }
+      { courtId: 1, courtName: 1, dateLabel: 1, slotTime: 1, createdAt: 1 }
     ).lean();
 
-    const bookedSlots = activeBookings.map((b) => ({
-      courtId: b.courtId || 'c1',
-      courtName: b.courtName || '',
-      dateLabel: b.dateLabel || 'Hoje',
-      slotTime: b.slotTime,
-    }));
+    const todayIso = getServerTodayIso();
+    const bookedSlots = [];
+    for (const b of activeBookings) {
+      const isoDate = resolveBookingIsoDate(b.dateLabel, b.createdAt);
+      if (isoDate < todayIso) continue;
+      bookedSlots.push({
+        courtId: b.courtId || 'c1',
+        courtName: b.courtName || '',
+        dateLabel: b.dateLabel || isoDate,
+        isoDate,
+        slotTime: b.slotTime,
+      });
+    }
 
     res.set('Cache-Control', 'no-store');
     return res.json({ bookedSlots });
@@ -1043,6 +1276,7 @@ app.post('/api/owner/arenas', async (req, res) => {
       reviews: [],
       pricePerHour: Number(payload.pricePerHour) || 180,
       pricePerPlayer: Number(payload.pricePerPlayer) || 20,
+      cancellationDeadlineHours: Math.max(0, Number(payload.cancellationDeadlineHours) || 0),
       image:
         payload.image ||
         'https://images.unsplash.com/photo-1574629810360-7efbbe195018?auto=format&fit=crop&w=1000&q=80',
@@ -1112,6 +1346,7 @@ app.put('/api/owner/arenas/:id', async (req, res) => {
       'description',
       'pricePerHour',
       'pricePerPlayer',
+      'cancellationDeadlineHours',
       'image',
       'gallery',
       'amenities',
@@ -1208,17 +1443,21 @@ app.post('/api/owner/bookings', async (req, res) => {
       });
     }
 
-    // Verifica se já existe agendamento confirmado para a mesma Arena, Quadra, Data e Horário (evita duplicidade)
-    const existingConflict = await Booking.findOne({
+    // Verifica se já existe agendamento confirmado para a mesma Arena, Quadra, Data ISO real e Horário (evita duplicidade e não trava dias futuros com reservas antigas)
+    const targetIsoDate = resolveBookingIsoDate(resolvedDateLabel, new Date());
+    const sameSlotBookings = await Booking.find({
       arenaId: String(arena._id),
-      dateLabel: resolvedDateLabel,
       slotTime: resolvedSlotTime,
       bookingStatus: { $ne: 'cancelled' },
       $or: [
         { courtId: resolvedCourtId },
         { courtName: resolvedCourtName },
       ],
-    });
+    }).lean();
+
+    const existingConflict = sameSlotBookings.find(
+      (b) => resolveBookingIsoDate(b.dateLabel, b.createdAt) === targetIsoDate
+    );
 
     if (existingConflict) {
       return res.status(409).json({
@@ -1379,6 +1618,7 @@ function formatPublicPlayer(u) {
     cardThemeId: u.cardThemeId || 'neon-lime',
     ovr: u.ovr ?? 0,
     avatar: u.avatar || '',
+    avatarScale: u.avatarScale || 100,
     isPro: Boolean(u.isPro && u.proStatus === 'active'),
     matchesCount: u.matchesCount || 0,
     matches: u.matchesCount || 0,
@@ -1695,16 +1935,21 @@ function formatMatchForClient(doc, currentUserId) {
     return !String(p.status || '').toLowerCase().includes('aguardando host');
   });
 
-  const pendingParticipants = allParticipants.filter((p) => {
-    if (p.requestStatus) return p.requestStatus === 'pending';
-    return String(p.status || '').toLowerCase().includes('aguardando host');
-  });
+  const pendingParticipants = allParticipants
+    .filter((p) => {
+      if (p.requestStatus) {
+        return p.requestStatus === 'pending' || p.requestStatus === 'awaiting_payment';
+      }
+      return String(p.status || '').toLowerCase().includes('aguardando');
+    })
+    .sort((a, b) => Number(Boolean(b.isPro)) - Number(Boolean(a.isPro)));
 
   const confirmedCount = Math.max(1, approvedParticipants.length);
 
   return {
     id: String(m._id),
     _id: String(m._id),
+    createdAt: m.createdAt || null,
     hostId: m.hostId,
     title: m.title,
     arenaId: m.arenaId,
@@ -1721,6 +1966,12 @@ function formatMatchForClient(doc, currentUserId) {
     neededPositions: m.neededPositions || [],
     extras: m.extras || [],
     isPublicLobby: Boolean(m.isPublicLobby),
+    splitWithFriends: Boolean(
+      m.splitWithFriends ||
+        (Array.isArray(m.extras) &&
+          m.extras.some((e) => /divis[aã]o|pix split/i.test(String(e))))
+    ),
+    participantPaymentConfirmed: isHost ? true : Boolean(participant?.paymentConfirmed),
     role: isHost ? 'Organizador (Host)' : participant?.role || 'Atleta Participante',
     status: isHost
       ? m.status || 'Confirmada'
@@ -1750,15 +2001,84 @@ function formatMatchForClient(doc, currentUserId) {
     participants: allParticipants,
     approvedParticipants,
     pendingParticipants,
+    evaluationSummary: m.evaluationSummary || null,
   };
 }
 
-// GET /api/lobbies - Lista partidas públicas abertas reais do MongoDB
+// Helper: Verifica no servidor se a partida é elegível para o Lobby Público (hoje ou amanhã, não encerrada e não cancelada)
+function parseServerMatchDate(dateTimeStr, referenceDate = null) {
+  if (!dateTimeStr) return null;
+  const raw = String(dateTimeStr).trim();
+  const timeMatch = raw.match(/(\d{1,2}):(\d{2})/);
+  if (!timeMatch) return null;
+  const hours = Number(timeMatch[1]);
+  const minutes = Number(timeMatch[2]);
+  if (Number.isNaN(hours) || Number.isNaN(minutes)) return null;
+
+  const baseDate =
+    referenceDate && !Number.isNaN(new Date(referenceDate).getTime())
+      ? new Date(referenceDate)
+      : new Date();
+
+  const fullBrMatch = raw.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+  if (fullBrMatch) {
+    const [, dd, mm, yyyy] = fullBrMatch;
+    return new Date(Number(yyyy), Number(mm) - 1, Number(dd), hours, minutes, 0, 0);
+  }
+  const isoMatch = raw.match(/(\d{4})-(\d{2})-(\d{2})/);
+  if (isoMatch) {
+    const [, yyyy, mm, dd] = isoMatch;
+    return new Date(Number(yyyy), Number(mm) - 1, Number(dd), hours, minutes, 0, 0);
+  }
+  const shortBrMatch = raw.match(/(\d{2})\/(\d{2})/);
+  if (shortBrMatch) {
+    const [, dd, mm] = shortBrMatch;
+    return new Date(baseDate.getFullYear(), Number(mm) - 1, Number(dd), hours, minutes, 0, 0);
+  }
+  const lower = raw.toLowerCase();
+  if (lower.includes('amanh')) {
+    return new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate() + 1, hours, minutes, 0, 0);
+  }
+  if (lower.includes('hoje')) {
+    return new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate(), hours, minutes, 0, 0);
+  }
+  return null;
+}
+
+function isServerLobbyEligible(m) {
+  if (!m) return false;
+  const statusLower = String(m.status || '').toLowerCase();
+  if (
+    statusLower.includes('cancelad') ||
+    statusLower.includes('encerrad') ||
+    statusLower.includes('conclu') ||
+    statusLower.includes('finaliz')
+  ) {
+    return false;
+  }
+  const startDate = parseServerMatchDate(m.time, m.createdAt);
+  if (!startDate) return false;
+  if (Date.now() >= startDate.getTime() + 60 * 60 * 1000) {
+    return false;
+  }
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const matchDayStart = new Date(
+    startDate.getFullYear(),
+    startDate.getMonth(),
+    startDate.getDate()
+  ).getTime();
+  const dayDiff = Math.round((matchDayStart - todayStart) / (24 * 60 * 60 * 1000));
+  return dayDiff === 0 || dayDiff === 1;
+}
+
+// GET /api/lobbies - Lista partidas públicas abertas reais do MongoDB (apenas de hoje ou amanhã, não encerradas e não canceladas)
 app.get('/api/lobbies', async (req, res) => {
   try {
-    const matches = await Match.find({ isPublicLobby: true }).sort({ createdAt: -1 }).limit(30);
+    const matches = await Match.find({ isPublicLobby: true }).sort({ createdAt: -1 }).limit(50);
+    const validMatches = matches.filter((m) => isServerLobbyEligible(m));
     return res.json({
-      lobbies: matches.map((m) => formatMatchForClient(m, null)),
+      lobbies: validMatches.map((m) => formatMatchForClient(m, null)),
     });
   } catch (err) {
     return res.status(500).json({ message: err.message || 'Erro ao buscar lobbies.' });
@@ -1822,6 +2142,7 @@ app.post('/api/matches', async (req, res) => {
       neededPositions: Array.isArray(payload.neededPositions) ? payload.neededPositions : [],
       extras: Array.isArray(payload.extras) ? payload.extras : [],
       isPublicLobby: payload.isPublicLobby !== false,
+      splitWithFriends: Boolean(payload.splitWithFriends),
       status: payload.status || 'Confirmada',
       participants: [
         {
@@ -1833,6 +2154,7 @@ app.post('/api/matches', async (req, res) => {
           status: payload.status || 'Confirmada',
           requestStatus: 'approved',
           isPro,
+          paymentConfirmed: true,
           evaluated: false,
         },
       ],
@@ -1880,31 +2202,75 @@ app.post('/api/matches/:id/join', async (req, res) => {
     }
 
     if (existingIdx < 0) {
-      match.participants.push({
+      const approvedCount = match.participants.filter(
+        (p) => (p.requestStatus || 'approved') === 'approved'
+      ).length;
+      const isFull = approvedCount >= (match.totalSlots || 14);
+
+      const requiresSplitPayment = Boolean(
+        match.splitWithFriends ||
+          (Array.isArray(match.extras) &&
+            match.extras.some((e) => /divis[aã]o|pix split/i.test(String(e))))
+      );
+
+      const newParticipant = {
         userId,
         name: user.name,
         avatar: user.avatar,
         ovr: user.ovr ?? 0,
-        role: isPro
-          ? `⚡ Prioridade PRO na Fila (Host: ${match.hostName})`
-          : `Solicitante (Host: ${match.hostName})`,
-        status: isPro
-          ? 'Solicitação PRO Enviada • Aguardando Host'
-          : 'Solicitação Enviada • Aguardando Host',
+        role: requiresSplitPayment
+          ? `Aguardando Pagamento da Cota (R$ ${match.pricePerPlayer || 20},00)`
+          : isFull
+            ? isPro
+              ? `👑 1º da Fila de Espera PRO (Host: ${match.hostName})`
+              : `Fila de Espera (Host: ${match.hostName})`
+            : isPro
+              ? `⚡ Prioridade PRO na Fila (Host: ${match.hostName})`
+              : `Solicitante (Host: ${match.hostName})`,
+        status: requiresSplitPayment
+          ? 'Aguardando Confirmação do Gateway de Pagamento'
+          : isFull
+            ? isPro
+              ? 'Fila de Espera PRO • Prioridade Máxima'
+              : 'Na Fila de Espera • Aguardando Vaga'
+            : isPro
+              ? 'Solicitação PRO Enviada • Aguardando Host'
+              : 'Solicitação Enviada • Aguardando Host',
         requestStatus: 'pending',
         isPro,
+        paymentConfirmed: false,
         evaluated: false,
-      });
+      };
+
+      // Jogadores PRO pulam para o topo da fila de solicitações pendentes
+      if (isPro) {
+        const firstNonProPendingIdx = match.participants.findIndex(
+          (p) => p.requestStatus === 'pending' && !p.isPro
+        );
+        if (firstNonProPendingIdx >= 0) {
+          match.participants.splice(firstNonProPendingIdx, 0, newParticipant);
+        } else {
+          match.participants.push(newParticipant);
+        }
+      } else {
+        match.participants.push(newParticipant);
+      }
+
+      match.markModified('participants');
       await match.save();
 
       if (match.hostId && String(match.hostId) !== userId) {
         await Notification.create({
           userId: String(match.hostId),
           type: 'match_join_request',
-          title: 'Nova solicitação para entrar na sua partida',
+          title: isFull
+            ? 'Novo jogador entrou na fila de espera da partida'
+            : 'Nova solicitação para entrar na sua partida',
           message: `${user.name}${
-            isPro ? ' (Atleta PRO ⚡)' : ''
-          } solicitou entrada na partida "${match.title}" (${match.time}). Acesse a partida para aceitar ou recusar.`,
+            isPro ? ' (Atleta PRO ⚡ — Topo da Fila)' : ''
+          } ${
+            isFull ? 'entrou na fila de espera' : 'solicitou entrada'
+          } na partida "${match.title}" (${match.time}).`,
           matchId: String(match._id),
           arenaName: match.arena || '',
           matchTitle: match.title || '',
@@ -1991,7 +2357,47 @@ app.post('/api/matches/:id/participants/:targetUserId/respond', async (req, res)
     }
 
     if (action === 'accept') {
+      const requiresSplitPayment = Boolean(
+        match.splitWithFriends ||
+          (Array.isArray(match.extras) &&
+            match.extras.some((e) => /divis[aã]o|pix split/i.test(String(e))))
+      );
+
       const acceptedName = match.participants[partIdx].name;
+      const acceptedUserId = String(match.participants[partIdx].userId || targetUserId);
+
+      // Se a partida tiver divisão de valor e o jogador ainda não pagou, muda para aguardando pagamento e envia notificação ao solicitante
+      if (requiresSplitPayment && !match.participants[partIdx].paymentConfirmed) {
+        match.participants[partIdx].requestStatus = 'awaiting_payment';
+        match.participants[partIdx].role = `Aceito pelo Host • Aguardando Pagamento (R$ ${
+          match.pricePerPlayer || 20
+        },00)`;
+        match.participants[partIdx].status = 'Aprovado pelo Host • Aguardando Pagamento';
+        match.markModified('participants');
+        await match.save();
+
+        await Notification.create({
+          userId: acceptedUserId,
+          type: 'match_payment_required',
+          title: 'Sua solicitação foi aceita! Aguardando pagamento 💳⚽',
+          message: `O organizador aceitou sua entrada na partida "${match.title}" (${
+            match.time
+          }). Acesse os detalhes da partida para realizar o pagamento da sua cota de R$ ${
+            match.pricePerPlayer || 20
+          },00 e confirmar sua vaga!`,
+          matchId: String(match._id),
+          arenaName: match.arena || '',
+          matchTitle: match.title || '',
+          dateLabel: match.time || '',
+          read: false,
+        }).catch(() => {});
+
+        return res.json({
+          message: `Solicitação de ${acceptedName} aceita! Enviamos uma notificação de aguardando pagamento para ele.`,
+          match: formatMatchForClient(match, currentUserId),
+        });
+      }
+
       match.participants[partIdx].requestStatus = 'approved';
       match.participants[partIdx].role = 'Atleta Confirmado';
       match.participants[partIdx].status = 'Entrada Aprovada pelo Host';
@@ -2005,6 +2411,38 @@ app.post('/api/matches/:id/participants/:targetUserId/respond', async (req, res)
 
       if (mongoose.Types.ObjectId.isValid(targetUserId)) {
         await User.findByIdAndUpdate(targetUserId, { $inc: { matchesCount: 1 } }).catch(() => {});
+      }
+
+      // Notifica o solicitante que sua entrada foi aceita e já está confirmada (sem pagamento pendente)
+      if (acceptedUserId && acceptedUserId !== currentUserId) {
+        await Notification.create({
+          userId: acceptedUserId,
+          type: 'match_request_accepted',
+          title: 'Sua solicitação foi aceita! Vaga confirmada ⚽✅',
+          message: `O organizador aceitou sua entrada na partida "${match.title}" em ${match.arena} (${match.time}). Não há pagamento pendente — a partida já está na sua aba de Partidas Futuras!`,
+          matchId: String(match._id),
+          arenaName: match.arena || '',
+          matchTitle: match.title || '',
+          dateLabel: match.time || '',
+          read: false,
+        }).catch(() => {});
+      }
+
+      // Notifica o criador da partida quando completar o número máximo de jogadores
+      if (match.hostId && approvedCount === (match.totalSlots || 14)) {
+        await Notification.create({
+          userId: String(match.hostId),
+          type: 'match_full',
+          title: 'Sua partida completou todos os jogadores! ⚽🔥',
+          message: `A partida "${match.title}" em ${match.arena} (${match.time}) atingiu a lotação máxima de ${
+            match.totalSlots || 14
+          }/${match.totalSlots || 14} atletas confirmados!`,
+          matchId: String(match._id),
+          arenaName: match.arena || '',
+          matchTitle: match.title || '',
+          dateLabel: match.time || '',
+          read: false,
+        }).catch(() => {});
       }
 
       return res.json({
@@ -2057,6 +2495,51 @@ app.post('/api/matches/:id/invite/respond', async (req, res) => {
     );
 
     if (action === 'accept') {
+      const requiresSplitPayment = Boolean(
+        match.splitWithFriends ||
+          (Array.isArray(match.extras) &&
+            match.extras.some((e) => /divis[aã]o|pix split/i.test(String(e))))
+      );
+      const { paymentConfirmed } = req.body || {};
+
+      if (requiresSplitPayment && paymentConfirmed !== true) {
+        const existingIdx = match.participants.findIndex(
+          (p) => String(p.userId) === userId
+        );
+        const isPro = Boolean(user.isPro && user.proStatus === 'active');
+
+        if (existingIdx >= 0) {
+          match.participants[existingIdx].requestStatus = 'awaiting_payment';
+          match.participants[existingIdx].role = `Convidado Aceito • Aguardando Pagamento (R$ ${
+            match.pricePerPlayer || 20
+          },00)`;
+          match.participants[existingIdx].status = 'Aguardando Pagamento da Cota';
+        } else {
+          match.participants.push({
+            userId,
+            name: user.name,
+            avatar: user.avatar,
+            ovr: user.ovr ?? 0,
+            role: `Convidado Aceito • Aguardando Pagamento (R$ ${match.pricePerPlayer || 20},00)`,
+            status: 'Aguardando Pagamento da Cota',
+            requestStatus: 'awaiting_payment',
+            isPro,
+            paymentConfirmed: false,
+            evaluated: false,
+          });
+        }
+        match.markModified('participants');
+        await match.save();
+
+        return res.json({
+          accepted: true,
+          requiresPayment: true,
+          message:
+            'Convite aceito! Realize o pagamento da sua cota abaixo para confirmar sua entrada oficial na partida.',
+          match: formatMatchForClient(match, userId),
+        });
+      }
+
       const existingIdx = match.participants.findIndex(
         (p) => String(p.userId) === userId
       );
@@ -2089,6 +2572,23 @@ app.post('/api/matches/:id/invite/respond', async (req, res) => {
 
       await User.findByIdAndUpdate(userId, { $inc: { matchesCount: 1 } }).catch(() => {});
 
+      // Notifica o criador da partida quando completar o número máximo de jogadores
+      if (match.hostId && approvedCount === (match.totalSlots || 14)) {
+        await Notification.create({
+          userId: String(match.hostId),
+          type: 'match_full',
+          title: 'Sua partida completou todos os jogadores! ⚽🔥',
+          message: `A partida "${match.title}" em ${match.arena} (${match.time}) atingiu a lotação máxima de ${
+            match.totalSlots || 14
+          }/${match.totalSlots || 14} atletas confirmados!`,
+          matchId: String(match._id),
+          arenaName: match.arena || '',
+          matchTitle: match.title || '',
+          dateLabel: match.time || '',
+          read: false,
+        }).catch(() => {});
+      }
+
       return res.json({
         accepted: true,
         message: 'Convite aceito! Você já está confirmado nesta partida.',
@@ -2107,6 +2607,103 @@ app.post('/api/matches/:id/invite/respond', async (req, res) => {
   }
 });
 
+// POST /api/matches/:id/pay-share - Realiza e confirma o pagamento da cota da partida (via gateway) após aprovação do Host
+app.post('/api/matches/:id/pay-share', async (req, res) => {
+  try {
+    const decoded = getAuthenticatedUserFromReq(req);
+    if (!decoded || !decoded.sub) {
+      return res.status(401).json({ message: 'Não autorizado.' });
+    }
+
+    const userId = String(decoded.sub);
+    const { paymentMethod = 'pix', transactionId } = req.body || {};
+
+    const [user, match] = await Promise.all([
+      User.findById(userId),
+      Match.findById(req.params.id),
+    ]);
+
+    if (!user || !match) {
+      return res.status(404).json({ message: 'Partida ou usuário não encontrado.' });
+    }
+
+    const partIdx = match.participants.findIndex(
+      (p) => String(p.userId) === userId
+    );
+    if (partIdx < 0) {
+      return res.status(404).json({
+        message: 'Solicite entrada na partida e aguarde o aceite do organizador antes de pagar.',
+      });
+    }
+
+    if (match.participants[partIdx].requestStatus === 'pending') {
+      return res.status(400).json({
+        message: 'Aguarde o organizador aceitar sua solicitação para liberar o pagamento.',
+      });
+    }
+
+    match.participants[partIdx].paymentConfirmed = true;
+    match.participants[partIdx].paymentTransactionId =
+      transactionId || `TX_MATCH_${String(paymentMethod).toUpperCase()}_${Date.now()}`;
+    match.participants[partIdx].requestStatus = 'approved';
+    match.participants[partIdx].role = 'Atleta Confirmado (Cota Paga)';
+    match.participants[partIdx].status = 'Confirmada • Pagamento Aprovado';
+    match.markModified('participants');
+
+    const approvedCount = match.participants.filter(
+      (p) => (p.requestStatus || 'approved') === 'approved'
+    ).length;
+    match.filledSlots = Math.max(1, approvedCount);
+    await match.save();
+
+    await User.findByIdAndUpdate(userId, { $inc: { matchesCount: 1 } }).catch(() => {});
+
+    if (match.hostId && String(match.hostId) !== userId) {
+      await Notification.create({
+        userId: String(match.hostId),
+        type: 'match_payment_confirmed',
+        title: `${user.name} confirmou o pagamento da partida! 💳✅`,
+        message: `O pagamento da cota (R$ ${
+          match.pricePerPlayer || 20
+        },00) de ${user.name} foi confirmado pelo gateway e ele já entrou no elenco confirmado de "${
+          match.title
+        }".`,
+        matchId: String(match._id),
+        arenaName: match.arena || '',
+        matchTitle: match.title || '',
+        dateLabel: match.time || '',
+        read: false,
+      }).catch(() => {});
+
+      if (approvedCount === (match.totalSlots || 14)) {
+        await Notification.create({
+          userId: String(match.hostId),
+          type: 'match_full',
+          title: 'Sua partida completou todos os jogadores! ⚽🔥',
+          message: `A partida "${match.title}" em ${match.arena} (${match.time}) atingiu a lotação máxima de ${
+            match.totalSlots || 14
+          }/${match.totalSlots || 14} atletas confirmados!`,
+          matchId: String(match._id),
+          arenaName: match.arena || '',
+          matchTitle: match.title || '',
+          dateLabel: match.time || '',
+          read: false,
+        }).catch(() => {});
+      }
+    }
+
+    return res.json({
+      ok: true,
+      message: 'Pagamento confirmado! Sua vaga na partida está garantida.',
+      match: formatMatchForClient(match, userId),
+    });
+  } catch (err) {
+    return res.status(500).json({
+      message: err.message || 'Erro ao processar pagamento da partida.',
+    });
+  }
+});
+
 // POST /api/matches/:id/invite/:targetUserId - Convida um amigo para a partida enviando notificação
 app.post('/api/matches/:id/invite/:targetUserId', async (req, res) => {
   try {
@@ -2121,6 +2718,13 @@ app.post('/api/matches/:id/invite/:targetUserId', async (req, res) => {
 
     if (!sender || !match) {
       return res.status(404).json({ message: 'Partida ou usuário não encontrado.' });
+    }
+
+    const statusLower = String(match.status || '').toLowerCase();
+    if (statusLower.includes('cancelad') || statusLower.includes('encerrad')) {
+      return res.status(400).json({
+        message: 'Não é possível convidar jogadores para uma partida já encerrada ou cancelada.',
+      });
     }
 
     if (!Array.isArray(match.invitedUserIds)) {
@@ -2152,7 +2756,7 @@ app.post('/api/matches/:id/invite/:targetUserId', async (req, res) => {
   }
 });
 
-// DELETE /api/matches/:id - Cancela ou sai de uma partida
+// DELETE /api/matches/:id - Cancela (Host) ou sai de uma partida (Participante)
 app.delete('/api/matches/:id', async (req, res) => {
   try {
     const decoded = getAuthenticatedUserFromReq(req);
@@ -2167,14 +2771,138 @@ app.delete('/api/matches/:id', async (req, res) => {
     }
 
     if (String(match.hostId) === userId) {
-      await Match.findByIdAndDelete(match._id);
+      // Verifica se a arena estabeleceu um período máximo para cancelamento antes da partida
+      if (match.arenaId && mongoose.Types.ObjectId.isValid(match.arenaId)) {
+        const linkedArena = await Arena.findById(match.arenaId)
+          .select('name cancellationDeadlineHours')
+          .lean();
+        const deadlineHours = Number(linkedArena?.cancellationDeadlineHours || 0);
+        if (deadlineHours > 0) {
+          const matchStartDate = parseServerMatchDate(match.time, match.createdAt);
+          if (matchStartDate) {
+            const msUntilStart = matchStartDate.getTime() - Date.now();
+            const hoursUntilStart = msUntilStart / (60 * 60 * 1000);
+            if (hoursUntilStart < deadlineHours) {
+              return res.status(400).json({
+                message: `Cancelamento bloqueado: a arena ${
+                  linkedArena.name || match.arena
+                } permite cancelar apenas até ${deadlineHours} ${
+                  deadlineHours === 1 ? 'hora' : 'horas'
+                } antes do início da partida.`,
+              });
+            }
+          }
+        }
+      }
+
+      // Marca a partida como cancelada pelo organizador para que apareça na aba "Canceladas" de todos os envolvidos
+      match.status = 'Cancelada pelo Organizador';
+      match.isPublicLobby = false;
+
+      const affectedUserIds = new Set();
+      if (Array.isArray(match.participants)) {
+        match.participants.forEach((p) => {
+          const pid = String(p.userId || '');
+          if (pid && pid !== userId) {
+            affectedUserIds.add(pid);
+          }
+          p.status = 'Cancelada pelo Organizador';
+        });
+        match.markModified('participants');
+      }
+
+      if (Array.isArray(match.invitedUserIds)) {
+        match.invitedUserIds.forEach((invId) => {
+          const idStr = String(invId || '');
+          if (idStr && idStr !== userId) {
+            affectedUserIds.add(idStr);
+          }
+        });
+      }
+
+      await match.save();
+
+      // Libera o horário na arena cancelando a reserva vinculada (por bookingId ou por arenaId + data + horário)
+      let releasedSlotTime = '';
+      if (match.bookingId && mongoose.Types.ObjectId.isValid(match.bookingId)) {
+        const cancelledBooking = await Booking.findByIdAndUpdate(
+          match.bookingId,
+          { bookingStatus: 'cancelled' },
+          { new: true }
+        ).catch(() => null);
+        if (cancelledBooking?.slotTime) {
+          releasedSlotTime = cancelledBooking.slotTime;
+        }
+      }
+
+      // Fallback para partidas sem bookingId ou criadas anteriormente: busca reserva ativa pelo mesmo arenaId + data ISO + horário
+      const timeMatch = String(match.time || '').match(/(\d{1,2}:\d{2})/);
+      const matchSlotTime = releasedSlotTime || (timeMatch ? timeMatch[1].padStart(5, '0') : '');
+      if (match.arenaId && matchSlotTime) {
+        const matchIsoDate = resolveBookingIsoDate(match.time, match.createdAt);
+        const activeSameSlot = await Booking.find({
+          arenaId: String(match.arenaId),
+          slotTime: matchSlotTime,
+          bookingStatus: { $ne: 'cancelled' },
+        });
+        for (const b of activeSameSlot) {
+          if (resolveBookingIsoDate(b.dateLabel, b.createdAt) === matchIsoDate) {
+            b.bookingStatus = 'cancelled';
+            await b.save().catch(() => {});
+          }
+        }
+
+        if (mongoose.Types.ObjectId.isValid(match.arenaId)) {
+          const arenaDoc = await Arena.findById(match.arenaId).catch(() => null);
+          if (arenaDoc && Array.isArray(arenaDoc.slots)) {
+            const slotIdx = arenaDoc.slots.findIndex((s) => s.time === matchSlotTime);
+            if (slotIdx >= 0 && arenaDoc.slots[slotIdx].status !== 'available') {
+              arenaDoc.slots[slotIdx].status = 'available';
+              await arenaDoc.save().catch(() => {});
+            }
+          }
+        }
+      }
+
+      invalidateServerArenasCache();
+
+      // Envia notificação para todos os participantes e convidados avisando do cancelamento
+      const hostDisplayName = match.hostName || 'O organizador';
+      const notifDocs = Array.from(affectedUserIds).map((uid) => ({
+        userId: uid,
+        type: 'match_cancelled',
+        title: 'Partida cancelada pelo organizador',
+        message: `${hostDisplayName} cancelou a partida "${match.title}" agendada em ${match.arena} (${match.time}). A partida foi movida para a sua aba de Partidas Canceladas.`,
+        matchId: String(match._id),
+        arenaName: match.arena || '',
+        matchTitle: match.title || '',
+        dateLabel: match.time || '',
+        read: false,
+      }));
+
+      if (notifDocs.length > 0) {
+        await Notification.insertMany(notifDocs).catch(() => {});
+      }
+
+      return res.json({
+        ok: true,
+        cancelled: true,
+        match: formatMatchForClient(match, userId),
+      });
     } else {
       match.participants = match.participants.filter((p) => String(p.userId) !== userId);
-      match.filledSlots = Math.max(1, match.participants.length);
+      const approvedCount = match.participants.filter(
+        (p) => (p.requestStatus || 'approved') === 'approved'
+      ).length;
+      match.filledSlots = Math.max(1, approvedCount);
+      match.markModified('participants');
       await match.save();
-    }
 
-    return res.json({ ok: true });
+      return res.json({
+        ok: true,
+        left: true,
+      });
+    }
   } catch (err) {
     return res.status(500).json({ message: err.message || 'Erro ao cancelar partida.' });
   }
@@ -2249,7 +2977,7 @@ app.post('/api/evaluations', async (req, res) => {
       }
     }
 
-    // Marca a partida como avaliada para o usuário atual
+    // Marca a partida como avaliada para o usuário atual, salva notas/MVP e verifica se todos os jogadores já avaliaram
     if (matchId && mongoose.Types.ObjectId.isValid(matchId) && decoded?.sub) {
       const match = await Match.findById(matchId);
       if (match) {
@@ -2257,6 +2985,58 @@ app.post('/api/evaluations', async (req, res) => {
         if (part) {
           part.evaluated = true;
           part.evaluationStars = arenaStars || 5;
+        }
+
+        if (Array.isArray(playerRatings) && playerRatings.length > 0) {
+          for (const pr of playerRatings) {
+            const targetPart = match.participants.find(
+              (p) => String(p.userId) === String(pr.id) || p.name === pr.name
+            );
+            if (targetPart && typeof pr.score === 'number') {
+              targetPart.matchScore =
+                typeof targetPart.matchScore === 'number'
+                  ? Number(((targetPart.matchScore + pr.score) / 2).toFixed(1))
+                  : Number(pr.score.toFixed(1));
+              if (Array.isArray(pr.badges) && pr.badges.length > 0) {
+                targetPart.matchBadges = Array.from(
+                  new Set([...(targetPart.matchBadges || []), ...pr.badges])
+                );
+              }
+            }
+          }
+
+          const sortedRatings = [...playerRatings].sort(
+            (a, b) => (Number(b.score) || 0) - (Number(a.score) || 0)
+          );
+          const mvpEntry =
+            playerRatings.find((p) => String(p.id) === String(mvpPlayerId)) ||
+            sortedRatings[0];
+
+          match.evaluationSummary = {
+            arenaStars: arenaStars || match.evaluationSummary?.arenaStars || 5,
+            arenaTierLabel:
+              arenaTierLabel || match.evaluationSummary?.arenaTierLabel || 'Arena Verificada',
+            arenaComment:
+              (arenaComment || '').trim() || match.evaluationSummary?.arenaComment || '',
+            mvpPlayerId: mvpEntry ? String(mvpEntry.id || '') : '',
+            mvpPlayerName: mvpEntry?.name || '',
+            mvpPlayerAvatar: mvpEntry?.avatar || '',
+            mvpScore: typeof mvpEntry?.score === 'number' ? Number(mvpEntry.score.toFixed(1)) : 9.5,
+            playerRatings: playerRatings.map((pr) => ({
+              id: String(pr.id || ''),
+              name: pr.name || 'Atleta',
+              avatar: pr.avatar || '',
+              score: typeof pr.score === 'number' ? Number(pr.score.toFixed(1)) : 8.5,
+              badges: Array.isArray(pr.badges) ? pr.badges : [],
+            })),
+          };
+        }
+
+        const approved = (match.participants || []).filter(
+          (p) => (p.requestStatus || 'approved') === 'approved'
+        );
+        if (approved.length > 0 && approved.every((p) => Boolean(p.evaluated))) {
+          match.status = 'Partida Encerrada • Avaliações Concluídas';
         }
         await match.save();
       }

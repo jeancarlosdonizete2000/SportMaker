@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { motion } from 'motion/react';
 import {
   Users,
   UserPlus,
@@ -12,12 +13,15 @@ import {
   Sparkles,
   Loader2,
   Bell,
+  Shield,
 } from 'lucide-react';
 import { ownerService } from '../../services/ownerService';
 import { ListCardsSkeleton } from '../ui/SkeletonLoaders';
+import TeamsTab from './TeamsTab';
 
 export default function FriendsTab() {
   const navigate = useNavigate();
+  const [activeSubTab, setActiveSubTab] = useState('friends');
   const cachedFriends = ownerService.getCachedFriendsData();
   const [friends, setFriends] = useState(() => cachedFriends?.friends || []);
 
@@ -232,9 +236,65 @@ export default function FriendsTab() {
   };
 
   return (
-    <div className="space-y-8">
-      {/* Header */}
-      <div className="glass-card rounded-3xl p-6 border border-white/15 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="space-y-6">
+      {/* Navegação interna: Amigos | Times com animação deslizante Motion */}
+      <div className="glass-card rounded-2xl p-1.5 border border-white/15 grid grid-cols-2 gap-1.5 relative">
+        <button
+          type="button"
+          onClick={() => setActiveSubTab('friends')}
+          className={`relative z-10 py-2.5 px-3 rounded-xl font-display font-extrabold text-xs sm:text-sm transition-colors flex items-center justify-center gap-2 ${
+            activeSubTab === 'friends'
+              ? 'text-dark-950'
+              : 'text-slate-300 hover:text-white hover:bg-white/5'
+          }`}
+        >
+          {activeSubTab === 'friends' && (
+            <motion.span
+              layoutId="friendsActiveTabBar"
+              transition={{ type: 'spring', stiffness: 420, damping: 32 }}
+              className="absolute inset-0 rounded-xl bg-neon shadow-neon -z-10"
+            />
+          )}
+          <Users className="w-4 h-4 shrink-0" />
+          <span>Meus Amigos</span>
+          <span
+            className={`px-1.5 py-0.5 rounded-full text-[10px] font-black transition-colors ${
+              activeSubTab === 'friends'
+                ? 'bg-dark-950/20 text-dark-950'
+                : 'bg-white/10 text-slate-300'
+            }`}
+          >
+            {friends.length}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveSubTab('teams')}
+          className={`relative z-10 py-2.5 px-3 rounded-xl font-display font-extrabold text-xs sm:text-sm transition-colors flex items-center justify-center gap-2 ${
+            activeSubTab === 'teams'
+              ? 'text-dark-950'
+              : 'text-slate-300 hover:text-white hover:bg-white/5'
+          }`}
+        >
+          {activeSubTab === 'teams' && (
+            <motion.span
+              layoutId="friendsActiveTabBar"
+              transition={{ type: 'spring', stiffness: 420, damping: 32 }}
+              className="absolute inset-0 rounded-xl bg-neon shadow-neon -z-10"
+            />
+          )}
+          <Shield className="w-4 h-4 shrink-0" />
+          <span>Meus Times</span>
+        </button>
+      </div>
+
+      {activeSubTab === 'teams' ? (
+        <TeamsTab />
+      ) : (
+        <>
+          {/* Header */}
+          <div className="glass-card rounded-3xl p-6 border border-white/15 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <span className="text-xs font-bold uppercase tracking-wider text-neon flex items-center gap-1.5">
             <Users className="w-4 h-4" /> Rede Social de Atletas
@@ -602,6 +662,8 @@ export default function FriendsTab() {
             ))}
           </div>
         </div>
+      )}
+        </>
       )}
     </div>
   );

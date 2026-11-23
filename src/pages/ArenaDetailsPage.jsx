@@ -53,6 +53,44 @@ function formatIsoDateLabel(isoDate) {
   return `${weekday.charAt(0).toUpperCase() + weekday.slice(1)}, ${brDate}`;
 }
 
+/**
+ * Extrai a data ISO exata (YYYY-MM-DD) de um agendamento para garantir que uma reserva de
+ * "Hoje (23/11/2026)" nunca trave o horário de "Hoje (24/11/2026)".
+ */
+function extractBookingIsoDate(booking) {
+  if (!booking) return '';
+  if (booking.isoDate && /^\d{4}-\d{2}-\d{2}$/.test(booking.isoDate)) {
+    return booking.isoDate;
+  }
+  const raw = String(booking.dateLabel || '').trim();
+  const fullBr = raw.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+  if (fullBr) {
+    return `${fullBr[3]}-${fullBr[2]}-${fullBr[1]}`;
+  }
+  const iso = raw.match(/(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) {
+    return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  }
+  const shortBr = raw.match(/(\d{2})\/(\d{2})/);
+  if (shortBr) {
+    const year = new Date().getFullYear();
+    return `${year}-${shortBr[2]}-${shortBr[1]}`;
+  }
+  if (booking.createdAt && !Number.isNaN(new Date(booking.createdAt).getTime())) {
+    const base = new Date(booking.createdAt);
+    if (raw.toLowerCase().includes('amanh')) {
+      base.setDate(base.getDate() + 1);
+    }
+    const y = base.getFullYear();
+    const m = String(base.getMonth() + 1).padStart(2, '0');
+    const d = String(base.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+  if (raw === 'Hoje') return getTodayIsoDate();
+  if (raw === 'Amanhã') return getTomorrowIsoDate();
+  return '';
+}
+
 function isSlotInPastForLocalTime(selectedDateIso, slotTimeStr) {
   if (!selectedDateIso || !slotTimeStr) return false;
   const todayIso = getTodayIsoDate();
@@ -123,6 +161,7 @@ export default function ArenaDetailsPage({
   );
   const [selectedDateIso, setSelectedDateIso] = useState(() => getTodayIsoDate());
   const [matchVisibility, setMatchVisibility] = useState('public'); // 'public' | 'friends'
+  const [maxPlayers, setMaxPlayers] = useState(14);
   const [activePhoto, setActivePhoto] = useState(arena.image || arena.gallery?.[0]);
   const [liveBookedSlots, setLiveBookedSlots] = useState(null);
 
@@ -162,37 +201,30 @@ export default function ArenaDetailsPage({
   // Verifica horários já ocupados nesta arena para a quadra e data selecionadas (evita duplicidade)
   const bookedTimesSet = useMemo(() => {
     const set = new Set();
-    const mergedBooked = [
-      ...(Array.isArray(arena.bookedSlots) ? arena.bookedSlots : []),
-      ...(Array.isArray(liveBookedSlots) ? liveBookedSlots : []),
-    ];
+    // Quando liveBookedSlots já foi carregado em tempo real (sem cache), usa exclusivamente ele
+    // para que horários cancelados fiquem livres imediatamente sem depender do cache antigo de arena.bookedSlots
+    const sourceBooked =
+      Array.isArray(liveBookedSlots)
+        ? liveBookedSlots
+        : Array.isArray(arena.bookedSlots)
+          ? arena.bookedSlots
+          : [];
     const currentCourtId = selectedCourt?.id || 'c1';
     const currentCourtName = selectedCourt?.name || '';
-    const todayIso = getTodayIsoDate();
-    const tomorrowIso = getTomorrowIsoDate();
-    const [, selMonth, selDay] = String(selectedDateIso || '').split('-');
-    const selectedDdMm = selDay && selMonth ? `${selDay}/${selMonth}` : '';
 
-    for (const b of mergedBooked) {
+    for (const b of sourceBooked) {
       const sameCourt =
         (b.courtId && b.courtId === currentCourtId) ||
         (b.courtName && b.courtName === currentCourtName);
       if (!sameCourt) continue;
 
-      const bDate = String(b.dateLabel || '').trim();
-      const sameDate =
-        bDate === selectedDateLabel ||
-        bDate === selectedDateIso ||
-        (selectedDdMm && bDate.includes(selectedDdMm)) ||
-        (selectedDateIso === todayIso && bDate.startsWith('Hoje')) ||
-        (selectedDateIso === tomorrowIso && bDate.startsWith('Amanhã'));
-
-      if (sameDate && b.slotTime) {
+      const bookingIso = extractBookingIsoDate(b);
+      if (bookingIso === selectedDateIso && b.slotTime) {
         set.add(b.slotTime);
       }
     }
     return set;
-  }, [arena.bookedSlots, liveBookedSlots, selectedCourt, selectedDateLabel, selectedDateIso]);
+  }, [arena.bookedSlots, liveBookedSlots, selectedCourt, selectedDateIso]);
 
   const isSlotBooked = (slotObj) => {
     if (slotObj.status === 'booked' || slotObj.status === 'blocked') return true;
@@ -718,7 +750,58 @@ export default function ArenaDetailsPage({
           </div>
         </div>
 
-        {/* Step 4: Summary & Final CTA */}
+        {/* Step 4: Quantidade de Jogadores na Partida */}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <label className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+              <Users className="w-4 h-4 text-neon" /> 4. Quantos Jogadores Podem Entrar na Partida:
+            </label>
+            <span className="text-xs font-display font-black text-neon">
+              Limite: {maxPlayers} atletas
+            </span>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {[
+              { count: 4, label: '4 (Duplas / BT / Padel)' },
+              { count: 8, label: '8 (4x4)' },
+              { count: 10, label: '10 (Futsal 5x5)' },
+              { count: 12, label: '12 (Society 6x6)' },
+              { count: 14, label: '14 (Society 7x7)' },
+              { count: 16, label: '16 (7x7 + Reservas)' },
+              { count: 22, label: '22 (Campo 11x11)' },
+            ].map((opt) => (
+              <button
+                key={opt.count}
+                type="button"
+                onClick={() => setMaxPlayers(opt.count)}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold border transition-all ${
+                  maxPlayers === opt.count
+                    ? 'bg-neon text-dark-950 border-neon shadow-neon'
+                    : 'bg-dark-950/80 text-slate-300 border-white/10 hover:border-white/30'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+
+            <div className="flex items-center gap-1.5 bg-dark-950 border border-white/15 rounded-xl px-2.5 py-1.5">
+              <span className="text-[11px] text-slate-400 font-semibold">Outro:</span>
+              <input
+                type="number"
+                min={2}
+                max={40}
+                value={maxPlayers}
+                onChange={(e) =>
+                  setMaxPlayers(Math.max(2, Math.min(40, Number(e.target.value) || 2)))
+                }
+                className="w-12 bg-transparent text-xs font-display font-black text-neon text-center focus:outline-none"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Step 5: Summary & Final CTA */}
         <div className="pt-4 border-t border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="space-y-1">
             <div className="flex flex-wrap items-center gap-2 text-xs text-slate-300">
@@ -729,6 +812,9 @@ export default function ArenaDetailsPage({
               </span>
               <span className="px-2 py-0.5 rounded-md bg-white/10 text-[11px] font-bold text-neon">
                 {matchVisibility === 'public' ? '🌐 Partida Pública' : '🔒 Somente Amigos'}
+              </span>
+              <span className="px-2 py-0.5 rounded-md bg-white/10 text-[11px] font-bold text-emerald-300">
+                👥 Máx. {maxPlayers} jogadores
               </span>
             </div>
             <p className="text-xs text-slate-400">
@@ -757,6 +843,8 @@ export default function ArenaDetailsPage({
                 selectedSlotTime: chosenSlot,
                 matchVisibility,
                 isPublicLobby: matchVisibility === 'public',
+                maxPlayers,
+                totalSlots: maxPlayers,
               });
             }}
             className="px-7 py-4 rounded-2xl bg-neon hover:bg-neon-400 disabled:opacity-50 disabled:cursor-not-allowed text-dark-950 font-display font-black text-sm sm:text-base shadow-neon transition-all flex items-center justify-center gap-2"
