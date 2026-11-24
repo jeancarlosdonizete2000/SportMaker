@@ -317,6 +317,40 @@ export default function UserHomePage({
     });
   }, [allArenas, selectedCategory, searchQuery, userLocation, maxRadius]);
 
+  // Filter Public Lobbies by User Location & Radius (same criteria as Arenas)
+  const filteredLobbies = useMemo(() => {
+    return publicLobbies
+      .map((lobby) => {
+        const linkedArena = allArenas.find(
+          (a) =>
+            (lobby.arenaId &&
+              (String(a._id) === String(lobby.arenaId) ||
+                String(a.id) === String(lobby.arenaId))) ||
+            (lobby.arena &&
+              a.name &&
+              lobby.arena.toLowerCase().includes(a.name.toLowerCase()))
+        );
+        if (linkedArena && linkedArena.distanceKmValue !== undefined) {
+          return {
+            ...lobby,
+            distanceKmValue: linkedArena.distanceKmValue,
+            distance: `${linkedArena.distanceKmValue} km`,
+          };
+        }
+        return lobby;
+      })
+      .filter((lobby) => {
+        if (!userLocation?.lat) return true;
+        const numericDistance =
+          lobby.distanceKmValue !== undefined
+            ? lobby.distanceKmValue
+            : parseFloat(String(lobby.distance || '999').replace(',', '.'));
+        if (Number.isNaN(numericDistance)) return false;
+        return numericDistance <= maxRadius;
+      })
+      .sort((a, b) => (a.distanceKmValue ?? 99) - (b.distanceKmValue ?? 99));
+  }, [publicLobbies, allArenas, userLocation, maxRadius]);
+
   // Handle Request Entry in Public Lobby
   const handleRequestJoinLobby = async (lobby) => {
     try {
@@ -839,10 +873,14 @@ export default function UserHomePage({
                 path="lobbies"
                 element={
                   <PublicLobbiesTab
-                    lobbies={publicLobbies}
+                    lobbies={filteredLobbies}
                     requestedLobbyIds={requestedLobbyIds}
                     onRequestJoinLobby={handleRequestJoinLobby}
                     onOpenCreateMatch={() => setCreateMatchModalOpen(true)}
+                    maxRadius={maxRadius}
+                    onRadiusChange={setMaxRadius}
+                    userLocation={userLocation}
+                    onOpenLocationModal={() => setLocationModalOpen(true)}
                   />
                 }
               />
@@ -974,15 +1012,13 @@ export default function UserHomePage({
           />
         )}
 
-        {locationModalOpen && (
-          <LocationConsentModal
-            isOpen={locationModalOpen}
-            onClose={() => setLocationModalOpen(false)}
-            currentLocation={userLocation}
-            initialConsentAccepted={locationConsentAccepted}
-            onConfirmLocation={handleConfirmUserLocation}
-          />
-        )}
+        <LocationConsentModal
+          isOpen={locationModalOpen}
+          onClose={() => setLocationModalOpen(false)}
+          currentLocation={userLocation}
+          initialConsentAccepted={locationConsentAccepted}
+          onConfirmLocation={handleConfirmUserLocation}
+        />
 
         {matchToCancel && (
           <CancelMatchModal

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import {
   MapPin,
   Navigation,
@@ -23,7 +24,10 @@ export default function LocationConsentModal({
   initialConsentAccepted = false,
   onConfirmLocation,
 }) {
-  const [consentChecked, setConsentChecked] = useState(initialConsentAccepted);
+  const alreadyAcceptedConsent = Boolean(
+    initialConsentAccepted || locationService.getStoredConsent()?.accepted
+  );
+  const [consentChecked, setConsentChecked] = useState(alreadyAcceptedConsent);
   const [activeTab, setActiveTab] = useState('gps'); // 'gps' | 'manual'
   const [loadingGps, setLoadingGps] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -36,11 +40,12 @@ export default function LocationConsentModal({
   const [customCity, setCustomCity] = useState('');
 
   useEffect(() => {
-    setConsentChecked(initialConsentAccepted);
+    const accepted = Boolean(
+      initialConsentAccepted || locationService.getStoredConsent()?.accepted
+    );
+    setConsentChecked(accepted);
     setErrorMsg('');
   }, [initialConsentAccepted, isOpen]);
-
-  if (!isOpen) return null;
 
   const handleUseBrowserGps = async () => {
     setErrorMsg('');
@@ -148,8 +153,24 @@ export default function LocationConsentModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
-      <div className="bg-dark-900 border border-white/15 w-full max-w-xl rounded-t-3xl sm:rounded-3xl p-6 max-h-[92vh] overflow-y-auto space-y-5 shadow-2xl">
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.22 }}
+          onClick={onClose}
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4"
+        >
+          <motion.div
+            initial={{ y: '100%', opacity: 0.6 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: '100%', opacity: 0 }}
+            transition={{ type: 'spring', stiffness: 320, damping: 32 }}
+            onClick={(e) => e.stopPropagation()}
+            className="bg-dark-900 border border-white/15 w-full max-w-xl rounded-t-3xl sm:rounded-3xl p-6 max-h-[92vh] overflow-y-auto space-y-5 shadow-2xl"
+          >
         {/* Header */}
         <div className="flex items-start justify-between border-b border-white/10 pb-4">
           <div>
@@ -185,40 +206,42 @@ export default function LocationConsentModal({
           </div>
         )}
 
-        {/* TERMO DE CONSENTIMENTO DO USUÁRIO (Obrigatório antes de fornecer a localização) */}
-        <div className="p-4 rounded-2xl bg-dark-950 border border-neon/30 space-y-3">
-          <div className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-wider text-neon">
-            <ShieldCheck className="w-4 h-4" />
-            <span>Termo de Consentimento para Uso de Localização (LGPD)</span>
-          </div>
+        {/* TERMO DE CONSENTIMENTO DO USUÁRIO (Exibido apenas na primeira vez, antes de aceitar) */}
+        {!alreadyAcceptedConsent && (
+          <div className="p-4 rounded-2xl bg-dark-950 border border-neon/30 space-y-3">
+            <div className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-wider text-neon">
+              <ShieldCheck className="w-4 h-4" />
+              <span>Termo de Consentimento para Uso de Localização (LGPD)</span>
+            </div>
 
-          <div className="text-[11px] text-slate-300 leading-relaxed space-y-1.5 max-h-28 overflow-y-auto pr-1 border-b border-white/10 pb-2.5">
-            <p>
-              <strong>1. Finalidade:</strong> Ao aceitar este termo, você autoriza o <strong>SPORT MAKER</strong> a coletar ou processar sua localização geográfica (via API de GPS do navegador ou endereço marcado manualmente) exclusivamente para calcular a distância em quilômetros até as arenas esportivas, sugerir lobbies de partidas na sua região e conectar atletas próximos.
-            </p>
-            <p>
-              <strong>2. Privacidade & Segurança:</strong> Suas coordenadas exatas nunca são exibidas publicamente para outros usuários (apenas a distância aproximada em km) e não são compartilhadas com terceiros para fins publicitários.
-            </p>
-            <p>
-              <strong>3. Controle Manual e Revogação:</strong> Você pode alterar sua localização manualmente ou revogar este consentimento a qualquer momento neste painel.
-            </p>
-          </div>
+            <div className="text-[11px] text-slate-300 leading-relaxed space-y-1.5 max-h-28 overflow-y-auto pr-1 border-b border-white/10 pb-2.5">
+              <p>
+                <strong>1. Finalidade:</strong> Ao aceitar este termo, você autoriza o <strong>SPORT MAKER</strong> a coletar ou processar sua localização geográfica (via API de GPS do navegador ou endereço marcado manualmente) exclusivamente para calcular a distância em quilômetros até as arenas esportivas, sugerir lobbies de partidas na sua região e conectar atletas próximos.
+              </p>
+              <p>
+                <strong>2. Privacidade & Segurança:</strong> Suas coordenadas exatas nunca são exibidas publicamente para outros usuários (apenas a distância aproximada em km) e não são compartilhadas com terceiros para fins publicitários.
+              </p>
+              <p>
+                <strong>3. Controle Manual e Revogação:</strong> Você pode alterar sua localização manualmente ou revogar este consentimento a qualquer momento neste painel.
+              </p>
+            </div>
 
-          <label className="flex items-start gap-3 cursor-pointer select-none pt-1">
-            <input
-              type="checkbox"
-              checked={consentChecked}
-              onChange={(e) => {
-                setConsentChecked(e.target.checked);
-                if (e.target.checked) setErrorMsg('');
-              }}
-              className="mt-0.5 w-4 h-4 rounded accent-neon cursor-pointer"
-            />
-            <span className="text-xs font-bold text-white leading-snug">
-              Li e aceito o Termo de Consentimento de Localização e autorizo o cálculo de proximidade das arenas e partidas.
-            </span>
-          </label>
-        </div>
+            <label className="flex items-start gap-3 cursor-pointer select-none pt-1">
+              <input
+                type="checkbox"
+                checked={consentChecked}
+                onChange={(e) => {
+                  setConsentChecked(e.target.checked);
+                  if (e.target.checked) setErrorMsg('');
+                }}
+                className="mt-0.5 w-4 h-4 rounded accent-neon cursor-pointer"
+              />
+              <span className="text-xs font-bold text-white leading-snug">
+                Li e aceito o Termo de Consentimento de Localização e autorizo o cálculo de proximidade das arenas e partidas.
+              </span>
+            </label>
+          </div>
+        )}
 
         {errorMsg && (
           <div className="p-3.5 rounded-2xl bg-amber-400/10 border border-amber-400/30 flex items-start gap-2.5 text-xs text-amber-200">
@@ -417,8 +440,10 @@ export default function LocationConsentModal({
             </form>
           </div>
         )}
-      </div>
-    </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }
 

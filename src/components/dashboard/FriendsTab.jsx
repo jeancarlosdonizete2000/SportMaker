@@ -620,17 +620,17 @@ export default function FriendsTab() {
         </div>
       )}
 
-      {/* SEÇÃO 4: Sugestões Reais de Outros Usuários Cadastrados no Banco */}
+      {/* SEÇÃO 4: Sugestões por Região Próxima & Parceiros de Jogo */}
       {suggestions.length > 0 && (
         <div className="space-y-4 pt-4">
           <h3 className="font-display font-bold text-lg text-white flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-neon" /> Outros Atletas Cadastrados na Plataforma
+            <Sparkles className="w-4 h-4 text-neon" /> Sugestões na sua Região & Quem Jogou com Você
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {suggestions.map((person) => (
               <div
                 key={person.id}
-                className="p-4 rounded-2xl bg-dark-900/90 border border-white/10 flex items-center justify-between"
+                className="p-4 rounded-2xl bg-dark-900/90 border border-white/10 flex items-center justify-between gap-3"
               >
                 <div className="flex items-center gap-3">
                   {renderAvatar(person, 'w-12 h-12', 'rounded-full')}
@@ -648,6 +648,11 @@ export default function FriendsTab() {
                       </span>
                     </p>
                     <p className="text-xs text-slate-400">{person.sport}</p>
+                    {person.suggestionReason && (
+                      <p className="text-[11px] text-emerald-400 font-semibold mt-0.5">
+                        {person.suggestionReason}
+                      </p>
+                    )}
                   </div>
                 </div>
                 <button

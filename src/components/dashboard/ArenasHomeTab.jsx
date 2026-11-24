@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Star,
   MapPin,
@@ -6,11 +6,55 @@ import {
   Clock,
   UtensilsCrossed,
   ChevronRight,
+  ChevronDown,
   Search,
   Sparkles,
   Navigation,
+  ArrowUpDown,
+  Flame,
+  Beer,
+  X,
 } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 import { SPORTS_CATEGORIES } from '../../data/mockData';
+
+const SORT_OPTIONS = [
+  { id: 'distance', label: 'Mais próximas' },
+  { id: 'rating', label: 'Melhor avaliação' },
+  { id: 'matches', label: 'Mais partidas disputadas' },
+];
+
+const AMENITY_FILTERS = [
+  {
+    id: 'bbq',
+    label: 'Churrasqueira',
+    icon: Flame,
+    regex: /churras/i,
+  },
+  {
+    id: 'drinks',
+    label: 'Venda de Bebidas',
+    icon: Beer,
+    regex: /bebida|bar|cervej|chopp|isot[oô]nico/i,
+  },
+  {
+    id: 'food',
+    label: 'Refeições no Local',
+    icon: UtensilsCrossed,
+    regex: /restaurante|gastronomia|refei[cç]|por[cç][oõ]es|lanchonete|poke|hamb[uú]rguer|a[cç]a[ií]|comida/i,
+  },
+];
+
+function arenaMatchesAmenity(arena, regex) {
+  const amenitiesText = (arena.amenities || []).join(' ');
+  const servicesText = (arena.onSiteServices || [])
+    .map((s) => `${s.title || ''} ${s.description || ''} ${s.badge || ''}`)
+    .join(' ');
+  const productsText = (arena.products || [])
+    .map((p) => `${p.name || ''} ${p.tag || ''}`)
+    .join(' ');
+  return regex.test(`${amenitiesText} ${servicesText} ${productsText}`);
+}
 
 function FiveStarsDisplay({ rating }) {
   const rounded = Math.round(rating);
@@ -43,6 +87,58 @@ export default function ArenasHomeTab({
   userLocation,
   onOpenLocationModal,
 }) {
+  const [sortBy, setSortBy] = useState('distance');
+  const [sortMenuOpen, setSortMenuOpen] = useState(false);
+  const [selectedAmenities, setSelectedAmenities] = useState([]);
+
+  const toggleAmenity = (id) => {
+    setSelectedAmenities((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  const arenasInRadius = useMemo(
+    () =>
+      allArenas.filter((arena) => {
+        if (!userLocation?.lat) return true;
+        const numericDistance =
+          arena.distanceKmValue !== undefined
+            ? arena.distanceKmValue
+            : parseFloat(String(arena.distance || '0').replace(',', '.')) || 0;
+        return numericDistance <= maxRadius;
+      }),
+    [allArenas, userLocation, maxRadius]
+  );
+
+  const displayedArenas = useMemo(() => {
+    const filtered = arenas.filter((arena) => {
+      if (selectedAmenities.length === 0) return true;
+      return selectedAmenities.every((amenityId) => {
+        const def = AMENITY_FILTERS.find((f) => f.id === amenityId);
+        return def ? arenaMatchesAmenity(arena, def.regex) : true;
+      });
+    });
+
+    const sorted = [...filtered];
+    if (sortBy === 'rating') {
+      sorted.sort((a, b) => {
+        const diff = (Number(b.rating) || 0) - (Number(a.rating) || 0);
+        if (diff !== 0) return diff;
+        return (Number(b.reviewsCount) || 0) - (Number(a.reviewsCount) || 0);
+      });
+    } else if (sortBy === 'matches') {
+      sorted.sort((a, b) => {
+        const aScore = (a.bookedSlots?.length || 0) + (Number(a.reviewsCount) || 0);
+        const bScore = (b.bookedSlots?.length || 0) + (Number(b.reviewsCount) || 0);
+        return bScore - aScore;
+      });
+    }
+    return sorted;
+  }, [arenas, selectedAmenities, sortBy]);
+
+  const currentSortLabel =
+    SORT_OPTIONS.find((opt) => opt.id === sortBy)?.label || 'Mais próximas';
+
   return (
     <div className="space-y-8">
       {/* Top Welcome & Search Filter Bar (Desktop only — no mobile fica na lupa do header) */}
@@ -116,8 +212,8 @@ export default function ArenasHomeTab({
             const active = selectedCategory === cat.id;
             const realCount =
               cat.id === 'all'
-                ? allArenas.length
-                : allArenas.filter((a) => a.sport === cat.id).length;
+                ? arenasInRadius.length
+                : arenasInRadius.filter((a) => a.sport === cat.id).length;
             return (
               <button
                 key={cat.id}
@@ -164,19 +260,104 @@ export default function ArenasHomeTab({
         )}
       </div>
 
+      {/* Barra: Classificar Por + Filtros de Comodidades (Churrasqueira, Bebidas, Refeições) */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        {/* Botão Classificar Por */}
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setSortMenuOpen((prev) => !prev)}
+            className="px-3.5 py-2 rounded-xl bg-dark-900 border border-white/15 hover:border-neon/50 text-xs font-bold text-white flex items-center gap-2 transition-colors"
+          >
+            <ArrowUpDown className="w-3.5 h-3.5 text-neon" />
+            <span className="text-slate-400">Classificar por:</span>
+            <span className="text-neon">{currentSortLabel}</span>
+            <ChevronDown
+              className={`w-3.5 h-3.5 text-slate-400 transition-transform ${
+                sortMenuOpen ? 'rotate-180' : ''
+              }`}
+            />
+          </button>
+
+          <AnimatePresence>
+            {sortMenuOpen && (
+              <motion.div
+                initial={{ opacity: 0, y: -6, scale: 0.98 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -6, scale: 0.98 }}
+                transition={{ duration: 0.16 }}
+                className="absolute left-0 mt-2 w-56 rounded-2xl bg-dark-900 border border-white/15 shadow-2xl p-1.5 z-30"
+              >
+                {SORT_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => {
+                      setSortBy(opt.id);
+                      setSortMenuOpen(false);
+                    }}
+                    className={`w-full text-left px-3 py-2 rounded-xl text-xs font-bold transition-colors ${
+                      sortBy === opt.id
+                        ? 'bg-neon text-dark-950'
+                        : 'text-slate-200 hover:bg-white/10'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        {/* Filtros de Comodidades no Local */}
+        <div className="flex flex-wrap items-center gap-2">
+          {AMENITY_FILTERS.map((filter) => {
+            const Icon = filter.icon;
+            const active = selectedAmenities.includes(filter.id);
+            return (
+              <button
+                key={filter.id}
+                type="button"
+                onClick={() => toggleAmenity(filter.id)}
+                className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5 ${
+                  active
+                    ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.2)]'
+                    : 'bg-dark-900/90 border-white/10 text-slate-300 hover:border-white/25'
+                }`}
+              >
+                <Icon className={`w-3.5 h-3.5 ${active ? 'text-emerald-300' : 'text-neon'}`} />
+                <span>{filter.label}</span>
+              </button>
+            );
+          })}
+
+          {selectedAmenities.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setSelectedAmenities([])}
+              className="px-2.5 py-2 rounded-xl text-xs font-bold text-slate-400 hover:text-white bg-white/5 border border-white/10 flex items-center gap-1 transition-colors"
+            >
+              <X className="w-3.5 h-3.5" />
+              <span>Limpar</span>
+            </button>
+          )}
+        </div>
+      </div>
+
       {/* Arenas Showcase Grid with 5-Star Rating & Total Reviews */}
-      {arenas.length === 0 ? (
+      {displayedArenas.length === 0 ? (
         <div className="glass-card rounded-3xl p-10 border border-white/10 text-center space-y-2">
           <p className="font-display font-bold text-lg text-white">
             Nenhuma arena encontrada no banco de dados para este filtro.
           </p>
           <p className="text-xs text-slate-400">
-            Altere o filtro de esporte, aumente o raio de distância ou aguarde novas arenas serem cadastradas pelos proprietários.
+            Altere o filtro de esporte, comodidades ou aumente o raio de distância.
           </p>
         </div>
       ) : (
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {arenas.map((arena) => {
+        {displayedArenas.map((arena) => {
           const availableCount = arena.slots.filter((s) => s.status === 'available').length;
 
           return (

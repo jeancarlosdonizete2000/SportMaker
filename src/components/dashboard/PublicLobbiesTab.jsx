@@ -9,6 +9,7 @@ import {
   Crown,
   Users,
   Eye,
+  Navigation,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { SPORTS_CATEGORIES } from '../../data/mockData';
@@ -32,6 +33,10 @@ export default function PublicLobbiesTab({
   lobbies,
   requestedLobbyIds,
   onRequestJoinLobby,
+  maxRadius = 10,
+  onRadiusChange,
+  userLocation,
+  onOpenLocationModal,
 }) {
   const { user, isPro } = useAuth();
   const navigate = useNavigate();
@@ -54,37 +59,80 @@ export default function PublicLobbiesTab({
 
   return (
     <div className="space-y-6">
-      {/* Barra de Navegação com os Esportes */}
-      <div className="flex items-center gap-2.5 overflow-x-auto pb-1">
-        {SPORTS_CATEGORIES.map((cat) => {
-          const active = selectedSport === cat.id;
-          const count =
-            cat.id === 'all'
-              ? activeValidLobbies.length
-              : activeValidLobbies.filter((l) => detectLobbySport(l) === cat.id).length;
+      {/* Barra de Esportes + Filtro de Região & Raio de Distância */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5 overflow-x-auto no-scrollbar pb-1">
+          {SPORTS_CATEGORIES.map((cat) => {
+            const active = selectedSport === cat.id;
+            const count =
+              cat.id === 'all'
+                ? activeValidLobbies.length
+                : activeValidLobbies.filter((l) => detectLobbySport(l) === cat.id).length;
 
-          return (
-            <button
-              key={cat.id}
-              type="button"
-              onClick={() => setSelectedSport(cat.id)}
-              className={`shrink-0 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold border transition-all flex items-center gap-2 ${
-                active
-                  ? 'bg-neon text-dark-950 border-neon shadow-neon'
-                  : 'bg-dark-900/90 text-slate-300 border-white/10 hover:border-white/25'
-              }`}
-            >
-              <span>{cat.name}</span>
-              <span
-                className={`text-[11px] px-1.5 py-0.5 rounded-md ${
-                  active ? 'bg-dark-950/20 text-dark-950' : 'bg-white/5 text-slate-400'
+            return (
+              <button
+                key={cat.id}
+                type="button"
+                onClick={() => setSelectedSport(cat.id)}
+                className={`shrink-0 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold border transition-all flex items-center gap-2 ${
+                  active
+                    ? 'bg-neon text-dark-950 border-neon shadow-neon'
+                    : 'bg-dark-900/90 text-slate-300 border-white/10 hover:border-white/25'
                 }`}
               >
-                {count}
+                <span>{cat.name}</span>
+                <span
+                  className={`text-[11px] px-1.5 py-0.5 rounded-md ${
+                    active ? 'bg-dark-950/20 text-dark-950' : 'bg-white/5 text-slate-400'
+                  }`}
+                >
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          {onOpenLocationModal && (
+            <button
+              type="button"
+              onClick={onOpenLocationModal}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors flex items-center gap-1.5 ${
+                userLocation?.label
+                  ? 'bg-emerald-500/15 border-emerald-400/40 text-emerald-300'
+                  : 'bg-amber-400/15 border-amber-400/40 text-amber-300'
+              }`}
+            >
+              <Navigation className="w-3.5 h-3.5" />
+              <span className="max-w-[140px] truncate">
+                {userLocation?.label || 'Definir Região'}
               </span>
             </button>
-          );
-        })}
+          )}
+
+          {onRadiusChange && (
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-semibold text-slate-400 flex items-center gap-1 mr-0.5">
+                <MapPin className="w-3.5 h-3.5 text-neon" /> Raio:
+              </span>
+              {[2, 5, 10, 20].map((km) => (
+                <button
+                  key={km}
+                  type="button"
+                  onClick={() => onRadiusChange(km)}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                    maxRadius === km
+                      ? 'bg-neon text-dark-950'
+                      : 'bg-dark-900/90 text-slate-300 border border-white/10 hover:border-white/25'
+                  }`}
+                >
+                  {km} km
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Public Lobbies Grid */}

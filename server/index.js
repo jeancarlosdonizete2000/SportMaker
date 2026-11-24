@@ -1667,25 +1667,120 @@ app.get('/api/friends', async (req, res) => {
       sentIds.length > 0 ? User.find({ _id: { $in: sentIds } }) : [],
     ]);
 
-    const excludeFromSuggestions = [
-      currentUser._id,
-      ...friendIds,
-      ...receivedIds,
-      ...sentIds,
-    ];
+    const excludeIdsSet = new Set(
+      [currentUser._id, ...friendIds, ...receivedIds, ...sentIds].map(String)
+    );
+    const currentUserId = String(currentUser._id);
 
-    const suggestionsDocs = await User.find({
-      _id: { $nin: excludeFromSuggestions },
-      role: 'player',
+    // 1. Jogadores com quem o atleta já jogou anteriormente (mesmas partidas)
+    const pastMatches = await Match.find({
+      $or: [{ hostId: currentUserId }, { 'participants.userId': currentUserId }],
     })
-      .sort({ createdAt: -1 })
-      .limit(10);
+      .select('hostId participants.userId')
+      .lean();
+
+    const playedWithIdsSet = new Set();
+    for (const m of pastMatches) {
+      if (m.hostId && !excludeIdsSet.has(String(m.hostId))) {
+        playedWithIdsSet.add(String(m.hostId));
+      }
+      if (Array.isArray(m.participants)) {
+        for (const p of m.participants) {
+          if (p.userId && !excludeIdsSet.has(String(p.userId))) {
+            playedWithIdsSet.add(String(p.userId));
+          }
+        }
+      }
+    }
+
+    const playedWithValidIds = Array.from(playedWithIdsSet).filter((id) =>
+      mongoose.Types.ObjectId.isValid(id)
+    );
+
+    // 2. Atletas da mesma cidade ou região próxima (até 30 km)
+    const normalizeStr = (val) =>
+      String(val || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .trim();
+
+    const myLoc = currentUser.userLocation || {};
+    const myCity = normalizeStr(myLoc.city || (myLoc.label ? myLoc.label.split('-')[0] : ''));
+    const myLat = typeof myLoc.lat === 'number' ? myLoc.lat : null;
+    const myLng = typeof myLoc.lng === 'number' ? myLoc.lng : null;
+
+    const calcDistanceKm = (lat1, lng1, lat2, lng2) => {
+      const toRad = (v) => (v * Math.PI) / 180;
+      const R = 6371;
+      const dLat = toRad(lat2 - lat1);
+      const dLng = toRad(lng2 - lng1);
+      const a =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    };
+
+    const [playedWithDocs, candidatePlayers] = await Promise.all([
+      playedWithValidIds.length > 0
+        ? User.find({ _id: { $in: playedWithValidIds }, role: 'player' })
+        : [],
+      myCity || (myLat !== null && myLng !== null)
+        ? User.find({
+            _id: { $nin: Array.from(excludeIdsSet) },
+            role: 'player',
+          })
+            .sort({ createdAt: -1 })
+            .limit(80)
+        : [],
+    ]);
+
+    const suggestionsMap = new Map();
+
+    // Prioridade 1: Jogadores com quem já jogou anteriormente
+    for (const doc of playedWithDocs) {
+      const id = String(doc._id);
+      if (excludeIdsSet.has(id)) continue;
+      suggestionsMap.set(id, {
+        ...formatPublicPlayer(doc),
+        suggestionReason: 'Jogou com você anteriormente',
+      });
+    }
+
+    // Prioridade 2: Jogadores da mesma cidade ou região próxima (<= 30 km)
+    for (const doc of candidatePlayers) {
+      const id = String(doc._id);
+      if (excludeIdsSet.has(id) || suggestionsMap.has(id)) continue;
+
+      const uLoc = doc.userLocation || {};
+      const uCity = normalizeStr(uLoc.city || (uLoc.label ? uLoc.label.split('-')[0] : ''));
+      const uLat = typeof uLoc.lat === 'number' ? uLoc.lat : null;
+      const uLng = typeof uLoc.lng === 'number' ? uLoc.lng : null;
+
+      const sameCity = Boolean(myCity && uCity && myCity === uCity);
+      const distKm =
+        myLat !== null && myLng !== null && uLat !== null && uLng !== null
+          ? calcDistanceKm(myLat, myLng, uLat, uLng)
+          : null;
+      const isNearby = distKm !== null && distKm <= 30;
+
+      if (sameCity || isNearby) {
+        const displayCity = uLoc.city || myLoc.city || '';
+        suggestionsMap.set(id, {
+          ...formatPublicPlayer(doc),
+          suggestionReason: sameCity
+            ? `Mesma cidade${displayCity ? ` • ${displayCity}` : ''}`
+            : `Região próxima • ${Math.max(1, Math.round(distKm))} km`,
+        });
+      }
+      if (suggestionsMap.size >= 12) break;
+    }
 
     return res.json({
       friends: friendDocs.map(formatPublicPlayer),
       receivedRequests: receivedDocs.map(formatPublicPlayer),
       sentRequests: sentDocs.map(formatPublicPlayer),
-      suggestions: suggestionsDocs.map(formatPublicPlayer),
+      suggestions: Array.from(suggestionsMap.values()),
     });
   } catch (err) {
     return res.status(500).json({ message: err.message || 'Erro ao buscar amigos.' });
