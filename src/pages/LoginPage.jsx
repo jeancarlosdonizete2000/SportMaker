@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { motion, AnimatePresence } from 'motion/react';
 import {
   User,
   Store,
@@ -155,12 +156,7 @@ export default function LoginPage({
           cnpj: role === 'owner' ? cnpj : undefined,
           favoriteSport: role === 'player' ? favoriteSport : undefined,
         });
-        setVerificationNotice({
-          email: email.trim(),
-          sent: Boolean(result?.emailVerificationSent),
-          devUrl: result?.devVerificationUrl || '',
-          user: result?.user || result,
-        });
+        if (onSuccess) onSuccess(result?.user || result);
       }
     } catch (err) {
       setError(err.message || 'Falha na autenticação.');
@@ -256,66 +252,77 @@ export default function LoginPage({
 
       {/* Main Content Grid */}
       <div className="max-w-5xl w-full mx-auto my-8 relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
-        {/* Left Pitch Column */}
+        {/* Left Pitch Column com animação Motion ao alternar Atleta / Proprietário */}
         <div className="lg:col-span-5 space-y-6">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-neon/10 border border-neon/30 text-neon text-xs font-bold">
             <Database className="w-3.5 h-3.5" />
             <span>MongoDB Auth Ready • JWT Session</span>
           </div>
 
-          <h1 className="font-display font-black text-3xl sm:text-4xl text-white leading-tight">
-            {role === 'player' ? (
-              <>
-                Entre em Quadra, Crie Partidas e{' '}
-                <span className="text-neon">Evolua seu Card.</span>
-              </>
-            ) : (
-              <>
-                Gerencie sua Arena, Horários e{' '}
-                <span className="text-emerald-400">Catálogo de Produtos.</span>
-              </>
-            )}
-          </h1>
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={role}
+              initial={{ opacity: 0, x: role === 'owner' ? 20 : -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: role === 'owner' ? -20 : 20 }}
+              transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+              className="space-y-6"
+            >
+              <h1 className="font-display font-black text-3xl sm:text-4xl text-white leading-tight">
+                {role === 'player' ? (
+                  <>
+                    Entre em Quadra, Crie Partidas e{' '}
+                    <span className="text-neon">Evolua seu Card.</span>
+                  </>
+                ) : (
+                  <>
+                    Gerencie sua Arena, Horários e{' '}
+                    <span className="text-emerald-400">Catálogo de Produtos.</span>
+                  </>
+                )}
+              </h1>
 
-          <p className="text-slate-300 text-sm leading-relaxed">
-            {role === 'player'
-              ? 'A criação de partidas abertas, reserva de horários vagos e votação de MVP são exclusivas para atletas autenticados na plataforma.'
-              : 'Acesse o painel B2B para cadastrar quadras, configurar preços dinâmicos e vender kits de churrasco, bebidas e locação de materiais no checkout.'}
-          </p>
+              <p className="text-slate-300 text-sm leading-relaxed">
+                {role === 'player'
+                  ? 'A criação de partidas abertas, reserva de horários vagos e votação de MVP são exclusivas para atletas autenticados na plataforma.'
+                  : 'Acesse o painel B2B para cadastrar quadras, configurar preços dinâmicos e vender kits de churrasco, bebidas e locação de materiais no checkout.'}
+              </p>
 
-          <div className="space-y-3 pt-2">
-            {role === 'player' ? (
-              <>
-                <div className="flex items-center gap-3 text-xs text-slate-300">
-                  <CheckCircle2 className="w-4 h-4 text-neon shrink-0" />
-                  <span>Crie partidas públicas ou privadas e divida o Pix automaticamente</span>
-                </div>
-                <div className="flex items-center gap-3 text-xs text-slate-300">
-                  <CheckCircle2 className="w-4 h-4 text-neon shrink-0" />
-                  <span>Histórico salvo no banco com evolução de OVR e Fair Play</span>
-                </div>
-                <div className="flex items-center gap-3 text-xs text-slate-300">
-                  <CheckCircle2 className="w-4 h-4 text-neon shrink-0" />
-                  <span>Adicione amigos e convide jogadores próximos por GPS</span>
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="flex items-center gap-3 text-xs text-slate-300">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <span>Controle de ocupação em tempo real e fim dos horários ociosos</span>
-                </div>
-                <div className="flex items-center gap-3 text-xs text-slate-300">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <span>Venda antecipada de produtos do bar e aluguel de equipamentos</span>
-                </div>
-                <div className="flex items-center gap-3 text-xs text-slate-300">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <span>Selo de Arena Verificada com repasse automático via Pix</span>
-                </div>
-              </>
-            )}
-          </div>
+              <div className="space-y-3 pt-2">
+                {role === 'player' ? (
+                  <>
+                    <div className="flex items-center gap-3 text-xs text-slate-300">
+                      <CheckCircle2 className="w-4 h-4 text-neon shrink-0" />
+                      <span>Crie partidas públicas ou privadas e divida o Pix automaticamente</span>
+                    </div>
+                    <div className="flex items-center gap-3 text-xs text-slate-300">
+                      <CheckCircle2 className="w-4 h-4 text-neon shrink-0" />
+                      <span>Histórico salvo no banco com evolução de OVR e Fair Play</span>
+                    </div>
+                    <div className="flex items-center gap-3 text-xs text-slate-300">
+                      <CheckCircle2 className="w-4 h-4 text-neon shrink-0" />
+                      <span>Adicione amigos e convide jogadores próximos por GPS</span>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="flex items-center gap-3 text-xs text-slate-300">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span>Controle de ocupação em tempo real e fim dos horários ociosos</span>
+                    </div>
+                    <div className="flex items-center gap-3 text-xs text-slate-300">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span>Venda antecipada de produtos do bar e aluguel de equipamentos</span>
+                    </div>
+                    <div className="flex items-center gap-3 text-xs text-slate-300">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span>Selo de Arena Verificada com repasse automático via Pix</span>
+                    </div>
+                  </>
+                )}
+              </div>
+            </motion.div>
+          </AnimatePresence>
         </div>
 
         {/* Right Form Card */}
@@ -341,31 +348,54 @@ export default function LoginPage({
                 <button
                   type="button"
                   onClick={() => handleRoleSwitch('player')}
-                  className={`py-3 px-4 rounded-xl text-xs sm:text-sm font-display font-bold flex items-center justify-center gap-2 transition-all ${
+                  className={`relative py-3 px-4 rounded-xl text-xs sm:text-sm font-display font-bold flex items-center justify-center gap-2 transition-colors ${
                     role === 'player'
-                      ? 'bg-neon text-dark-950 shadow-neon'
+                      ? 'text-dark-950'
                       : 'text-slate-300 hover:text-white'
                   }`}
                 >
-                  <User className="w-4 h-4" />
-                  <span>Sou Atleta / Jogador</span>
+                  {role === 'player' && (
+                    <motion.span
+                      layoutId="loginRolePill"
+                      transition={{ type: 'spring', stiffness: 380, damping: 28 }}
+                      className="absolute inset-0 rounded-xl bg-neon shadow-neon"
+                    />
+                  )}
+                  <User className="w-4 h-4 relative z-10" />
+                  <span className="relative z-10">Sou Atleta / Jogador</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => handleRoleSwitch('owner')}
-                  className={`py-3 px-4 rounded-xl text-xs sm:text-sm font-display font-bold flex items-center justify-center gap-2 transition-all ${
+                  className={`relative py-3 px-4 rounded-xl text-xs sm:text-sm font-display font-bold flex items-center justify-center gap-2 transition-colors ${
                     role === 'owner'
-                      ? 'bg-emerald-400 text-dark-950 shadow-[0_0_20px_rgba(16,185,129,0.4)]'
+                      ? 'text-dark-950'
                       : 'text-slate-300 hover:text-white'
                   }`}
                 >
-                  <Store className="w-4 h-4" />
-                  <span>Sou Dono de Arena</span>
+                  {role === 'owner' && (
+                    <motion.span
+                      layoutId="loginRolePill"
+                      transition={{ type: 'spring', stiffness: 380, damping: 28 }}
+                      className="absolute inset-0 rounded-xl bg-emerald-400"
+                    />
+                  )}
+                  <Store className="w-4 h-4 relative z-10" />
+                  <span className="relative z-10">Sou Dono de Arena</span>
                 </button>
               </div>
             </div>
 
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={`${role}-${mode}`}
+                initial={{ opacity: 0, x: role === 'owner' ? 18 : -18 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: role === 'owner' ? -18 : 18 }}
+                transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
+                className="space-y-6"
+              >
             {/* Login vs Register Toggle */}
             <div className="flex items-center justify-between border-b border-white/10 pb-3">
               <div>
@@ -740,7 +770,7 @@ export default function LoginPage({
                 className={`w-full py-3.5 rounded-xl font-display font-extrabold text-sm transition-all flex items-center justify-center gap-2 ${
                   role === 'player'
                     ? 'bg-neon hover:bg-neon-400 text-dark-950 shadow-neon'
-                    : 'bg-emerald-400 hover:bg-emerald-300 text-dark-950 shadow-[0_0_25px_rgba(16,185,129,0.4)]'
+                    : 'bg-emerald-400 hover:bg-emerald-300 text-dark-950'
                 }`}
               >
                 <Sparkles className="w-4 h-4" />
@@ -764,6 +794,8 @@ export default function LoginPage({
               </span>
               <span>Coleção: `users` (MongoDB)</span>
             </div>
+              </motion.div>
+            </AnimatePresence>
           </div>
         </div>
       </div>

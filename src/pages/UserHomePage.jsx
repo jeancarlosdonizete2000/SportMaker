@@ -300,7 +300,35 @@ export default function UserHomePage({
     }
   }, [pendingAction, clearPendingAction]);
 
-  // Filter Arenas
+  // Helper: normaliza texto para comparação de cidade/região (sem acentos)
+  const normalizeRegionText = (val) =>
+    String(val || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim();
+
+  const matchesUserCityOrRegion = (item) => {
+    if (!userLocation?.label && !userLocation?.city && !userLocation?.lat) {
+      return true;
+    }
+    const myCity = normalizeRegionText(
+      userLocation.city || (userLocation.label ? userLocation.label.split(/[,-]/)[0] : '')
+    );
+    const itemRegion = normalizeRegionText(
+      `${item.neighborhood || ''} ${item.address || ''} ${item.arena || ''}`
+    );
+    if (myCity && itemRegion.includes(myCity)) {
+      return true;
+    }
+    // Fallback por proximidade ampla da região metropolitana (até 50 km)
+    if (userLocation?.lat && item.distanceKmValue !== undefined) {
+      return item.distanceKmValue <= 50;
+    }
+    return !myCity;
+  };
+
+  // Filter Arenas (toda a cidade ou região selecionada, sem filtro de raio fixo)
   const filteredArenas = useMemo(() => {
     return allArenas.filter((arena) => {
       const matchesSport = selectedCategory === 'all' || arena.sport === selectedCategory;
@@ -308,16 +336,11 @@ export default function UserHomePage({
         arena.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         arena.neighborhood.toLowerCase().includes(searchQuery.toLowerCase()) ||
         arena.sportLabel.toLowerCase().includes(searchQuery.toLowerCase());
-      const numericDistance =
-        arena.distanceKmValue !== undefined
-          ? arena.distanceKmValue
-          : parseFloat(String(arena.distance || '0').replace(',', '.')) || 0;
-      const matchesRadius = !userLocation?.lat || numericDistance <= maxRadius;
-      return matchesSport && matchesQuery && matchesRadius;
+      return matchesSport && matchesQuery && matchesUserCityOrRegion(arena);
     });
-  }, [allArenas, selectedCategory, searchQuery, userLocation, maxRadius]);
+  }, [allArenas, selectedCategory, searchQuery, userLocation]);
 
-  // Filter Public Lobbies by User Location & Radius (same criteria as Arenas)
+  // Filter Public Lobbies by User City/Region
   const filteredLobbies = useMemo(() => {
     return publicLobbies
       .map((lobby) => {
@@ -333,31 +356,27 @@ export default function UserHomePage({
         if (linkedArena && linkedArena.distanceKmValue !== undefined) {
           return {
             ...lobby,
+            neighborhood: linkedArena.neighborhood || lobby.neighborhood,
+            address: linkedArena.address || '',
             distanceKmValue: linkedArena.distanceKmValue,
             distance: `${linkedArena.distanceKmValue} km`,
           };
         }
         return lobby;
       })
-      .filter((lobby) => {
-        if (!userLocation?.lat) return true;
-        const numericDistance =
-          lobby.distanceKmValue !== undefined
-            ? lobby.distanceKmValue
-            : parseFloat(String(lobby.distance || '999').replace(',', '.'));
-        if (Number.isNaN(numericDistance)) return false;
-        return numericDistance <= maxRadius;
-      })
+      .filter((lobby) => matchesUserCityOrRegion(lobby))
       .sort((a, b) => (a.distanceKmValue ?? 99) - (b.distanceKmValue ?? 99));
-  }, [publicLobbies, allArenas, userLocation, maxRadius]);
+  }, [publicLobbies, allArenas, userLocation]);
 
   // Handle Request Entry in Public Lobby
   const handleRequestJoinLobby = async (lobby) => {
     try {
       const res = await ownerService.toggleJoinLobby(lobby.id);
       if (res.joined) {
-        setRequestedLobbyIds((prev) => [...prev, lobby.id]);
-        setMyMatches((prev) => [res.match, ...prev.filter((m) => m.id !== res.match.id)]);
+        setRequestedLobbyIds((prev) =>
+          prev.includes(lobby.id) ? prev : [...prev, lobby.id]
+        );
+        // Só entra em "Minhas Partidas" depois que o criador da partida aceitar o pedido
       } else {
         setRequestedLobbyIds((prev) => prev.filter((id) => id !== lobby.id));
         setMyMatches((prev) => prev.filter((m) => m.id !== lobby.id));

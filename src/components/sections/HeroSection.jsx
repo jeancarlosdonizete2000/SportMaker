@@ -35,11 +35,6 @@ export default function HeroSection({
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-8 items-center">
           {/* Hero Left Content */}
           <div className="lg:col-span-7 space-y-6 text-left">
-            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-neon/10 border border-neon/30 text-neon text-xs font-bold tracking-wide">
-              <span className="w-2 h-2 rounded-full bg-neon animate-ping" />
-              <span>+480 ARENAS COM HORÁRIOS VAGOS AGORA</span>
-            </div>
-
             <h1
               ref={heroTitleRef}
               className="font-display font-black text-4xl sm:text-6xl lg:text-[64px] leading-[1.05] tracking-tight text-white"
@@ -74,8 +69,8 @@ export default function HeroSection({
               <span className="text-white font-semibold">Player Card</span> a cada partida.
             </p>
 
-            {/* Interactive Quick Search Widget */}
-            <div className="glass-card p-3 sm:p-4 rounded-2xl border border-white/15 shadow-2xl max-w-2xl">
+            {/* Interactive Quick Search Widget (Desktop only — ocultado no mobile) */}
+            <div className="hidden md:block glass-card p-3 sm:p-4 rounded-2xl border border-white/15 shadow-2xl max-w-2xl">
               <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5">
                 {/* Location Input */}
                 <div className="sm:col-span-5 flex items-center gap-2.5 bg-dark-950/90 border border-white/10 rounded-xl px-3.5 py-3 focus-within:border-neon transition-colors">
@@ -142,25 +137,14 @@ export default function HeroSection({
                 </div>
               </div>
 
-              {/* Quick Proximity Chips */}
+              {/* Quick Info Footer */}
               <div className="mt-3 pt-2.5 border-t border-white/10 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
-                <div className="flex items-center gap-2">
-                  <span className="text-slate-300 font-semibold flex items-center gap-1">
-                    <MapPin className="w-3.5 h-3.5 text-neon" /> Raio de busca:
-                  </span>
-                  {[2, 5, 10, 20].map((km) => (
-                    <button
-                      key={km}
-                      onClick={() => onRadiusChange(km)}
-                      className={`px-2 py-0.5 rounded-md font-bold transition-colors ${maxRadius === km
-                          ? 'bg-neon text-dark-950'
-                          : 'bg-white/5 text-slate-300 hover:bg-white/10'
-                        }`}
-                    >
-                      Até {km} km
-                    </button>
-                  ))}
-                </div>
+                <span className="text-slate-300 font-semibold flex items-center gap-1.5">
+                  <MapPin className="w-3.5 h-3.5 text-neon" />
+                  {userLocation?.label
+                    ? `Exibindo arenas de ${userLocation.label}`
+                    : 'Arenas em toda a sua cidade e região'}
+                </span>
                 <span className="text-emerald-400 font-semibold flex items-center gap-1">
                   <CheckCircle2 className="w-3.5 h-3.5" /> Divisão de Pix automática
                 </span>

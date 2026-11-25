@@ -7,8 +7,50 @@ import nodemailer from 'nodemailer';
 import { hashPassword, verifyPassword, signJwtToken, verifyJwtToken } from './security.js';
 
 const app = express();
-app.use(cors());
+app.use(
+  cors({
+    origin: true,
+    credentials: true,
+  })
+);
 app.use(express.json({ limit: '25mb' }));
+
+const AUTH_COOKIE_NAME = 'sportmaker_auth';
+
+function setAuthCookie(res, token) {
+  const isProd = process.env.NODE_ENV === 'production' || Boolean(process.env.VERCEL);
+  res.cookie(AUTH_COOKIE_NAME, token, {
+    httpOnly: true,
+    secure: isProd,
+    sameSite: isProd ? 'none' : 'lax',
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 dias
+    path: '/',
+  });
+}
+
+function clearAuthCookie(res) {
+  const isProd = process.env.NODE_ENV === 'production' || Boolean(process.env.VERCEL);
+  res.clearCookie(AUTH_COOKIE_NAME, {
+    httpOnly: true,
+    secure: isProd,
+    sameSite: isProd ? 'none' : 'lax',
+    path: '/',
+  });
+}
+
+function parseCookiesFromHeader(cookieHeader = '') {
+  const cookies = {};
+  if (!cookieHeader) return cookies;
+  cookieHeader.split(';').forEach((part) => {
+    const idx = part.indexOf('=');
+    if (idx > 0) {
+      const key = part.slice(0, idx).trim();
+      const val = part.slice(idx + 1).trim();
+      cookies[key] = decodeURIComponent(val);
+    }
+  });
+  return cookies;
+}
 
 // Garante conexão com o MongoDB em ambientes Serverless (Vercel) e força o banco oficial `sport_maker_db`
 const MONGODB_DB_NAME = (process.env.MONGODB_DB_NAME || 'sport_maker_db').trim();
@@ -77,6 +119,7 @@ const UserSchema = new mongoose.Schema(
     favoriteSport: { type: String, default: 'society' },
     positionRole: { type: String, default: 'Atleta Sport Maker' },
     customTag: { type: String, default: 'Atleta Iniciante' },
+    teamTag: { type: String, default: '' },
     cardThemeId: { type: String, default: 'neon-lime' },
     ovr: { type: Number, default: 0 },
     pixKey: { type: String, default: '' },
@@ -213,7 +256,7 @@ const ArenaSchema = new mongoose.Schema(
     cnpj: { type: String, default: '' },
     sport: {
       type: String,
-      enum: ['society', 'beachtennis', 'padel', 'futevolei'],
+      enum: ['society', 'beachtennis', 'volei', 'padel', 'futevolei'],
       default: 'society',
     },
     sportLabel: { type: String, default: 'Futebol Society • Grama FIFA Pro' },
@@ -369,6 +412,8 @@ const BookingSchema = new mongoose.Schema(
       enum: ['confirmed', 'completed', 'cancelled', 'manual_block'],
       default: 'confirmed',
     },
+    eventTitle: { type: String, default: '' },
+    eventColor: { type: String, default: 'emerald' },
     notes: { type: String, default: '' },
   },
   { timestamps: true }
@@ -384,6 +429,7 @@ const NotificationSchema = new mongoose.Schema(
     title: { type: String, required: true },
     message: { type: String, required: true },
     matchId: { type: String, default: '' },
+    teamId: { type: String, default: '' },
     arenaName: { type: String, default: '' },
     matchTitle: { type: String, default: '' },
     dateLabel: { type: String, default: '' },
@@ -503,9 +549,7 @@ app.post('/api/auth/register', async (req, res) => {
       name: name.trim(),
       email: normalizedEmail,
       passwordHash,
-      emailVerified: false,
-      emailVerificationToken: verificationToken,
-      emailVerificationExpires: verificationExpires,
+      emailVerified: true,
       role: role || 'player',
       arenaName: role === 'owner' ? arenaName : null,
       cnpj: role === 'owner' ? cnpj : null,
@@ -514,33 +558,17 @@ app.post('/api/auth/register', async (req, res) => {
       avatar: avatar || '',
     });
 
-    const appOrigin = (
-      process.env.APP_URL ||
-      req.headers.origin ||
-      'http://localhost:5173'
-    ).replace(/\/+$/, '');
-    const verifyUrl = `${appOrigin}/confirmar-email?token=${verificationToken}`;
-
-    const mailResult = await sendConfirmationEmail(
-      normalizedEmail,
-      user.name,
-      verifyUrl
-    ).catch((mailErr) => {
-      console.error('⚠️ Erro ao enviar e-mail de confirmação:', mailErr.message);
-      return { sent: false, mode: 'error' };
-    });
-
     const token = signJwtToken({
       sub: String(user._id),
       email: user.email,
       role: user.role,
     });
 
+    setAuthCookie(res, token);
+
     return res.status(201).json({
       user: sanitizeUser(user),
       token,
-      emailVerificationSent: mailResult.sent,
-      devVerificationUrl: mailResult.sent ? undefined : verifyUrl,
       mode: 'mongodb_atlas_live',
     });
   } catch (err) {
@@ -646,6 +674,8 @@ app.post('/api/auth/google', async (req, res) => {
       role: user.role,
     });
 
+    setAuthCookie(res, token);
+
     return res.json({
       user: sanitizeUser(user),
       token,
@@ -654,6 +684,12 @@ app.post('/api/auth/google', async (req, res) => {
   } catch (err) {
     return res.status(500).json({ message: err.message || 'Erro ao autenticar com Google.' });
   }
+});
+
+// POST /api/auth/logout - Remove o cookie HttpOnly de autenticação
+app.post('/api/auth/logout', (req, res) => {
+  clearAuthCookie(res);
+  return res.json({ ok: true, message: 'Sessão encerrada com sucesso.' });
 });
 
 // POST /api/auth/login - Verifica o hash criptográfico (timingSafeEqual) e emite JWT assinado
@@ -690,6 +726,8 @@ app.post('/api/auth/login', async (req, res) => {
       email: user.email,
       role: user.role,
     });
+
+    setAuthCookie(res, token);
 
     return res.json({
       user: sanitizeUser(user),
@@ -1050,7 +1088,11 @@ async function ensureOwnerDefaultArenaAndBookings(ownerUser) {
 
 function getAuthenticatedUserFromReq(req) {
   const authHeader = req.headers.authorization || '';
-  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  let token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  if (!token) {
+    const cookies = parseCookiesFromHeader(req.headers.cookie || '');
+    token = cookies[AUTH_COOKIE_NAME] || null;
+  }
   if (!token) return null;
   return verifyJwtToken(token);
 }
@@ -1421,6 +1463,9 @@ app.post('/api/owner/bookings', async (req, res) => {
       productsList,
       paymentMethod,
       paymentStatus,
+      bookingStatus,
+      eventTitle,
+      eventColor,
       notes,
     } = req.body;
 
@@ -1465,7 +1510,10 @@ app.post('/api/owner/bookings', async (req, res) => {
       });
     }
 
-    const parsedCourtAmount = Number(courtAmount) || arena.pricePerHour || 200;
+    const isManualBlock = bookingStatus === 'manual_block';
+    const parsedCourtAmount = isManualBlock
+      ? Number(courtAmount) || 0
+      : Number(courtAmount) || arena.pricePerHour || 200;
     const parsedProductsAmount = Number(productsAmount) || 0;
 
     const newBooking = await Booking.create({
@@ -1478,8 +1526,8 @@ app.post('/api/owner/bookings', async (req, res) => {
       sport: sport || arena.courts?.[0]?.sport || 'Futebol Society',
       dateLabel: resolvedDateLabel,
       slotTime: resolvedSlotTime,
-      customerName: customerName || 'Cliente Presencial',
-      customerPhone: customerPhone || '(11) 99999-0000',
+      customerName: customerName || (isManualBlock ? eventTitle || 'Compromisso / Manutenção' : 'Cliente Presencial'),
+      customerPhone: customerPhone || (isManualBlock ? 'Bloqueio Interno' : '(11) 99999-0000'),
       customerEmail: customerEmail || '',
       isProCustomer: Boolean(isProCustomer),
       courtAmount: parsedCourtAmount,
@@ -1488,7 +1536,9 @@ app.post('/api/owner/bookings', async (req, res) => {
       productsList: Array.isArray(productsList) ? productsList : [],
       paymentMethod: paymentMethod || 'Pix',
       paymentStatus: paymentStatus || 'paid',
-      bookingStatus: 'confirmed',
+      bookingStatus: isManualBlock ? 'manual_block' : 'confirmed',
+      eventTitle: eventTitle || '',
+      eventColor: eventColor || (isManualBlock ? 'red' : 'emerald'),
       notes: notes || '',
     });
 
@@ -1518,6 +1568,8 @@ app.patch('/api/owner/bookings/:id', async (req, res) => {
 
     if (req.body.paymentStatus) booking.paymentStatus = req.body.paymentStatus;
     if (req.body.bookingStatus) booking.bookingStatus = req.body.bookingStatus;
+    if (req.body.eventTitle !== undefined) booking.eventTitle = req.body.eventTitle;
+    if (req.body.eventColor !== undefined) booking.eventColor = req.body.eventColor;
     if (req.body.notes !== undefined) booking.notes = req.body.notes;
 
     await booking.save();
@@ -1842,7 +1894,52 @@ app.get('/api/users/:id', async (req, res) => {
     if (!targetUser) {
       return res.status(404).json({ message: 'Usuário não encontrado.' });
     }
-    return res.json({ user: formatPublicPlayer(targetUser) });
+
+    // Busca o time oficial do atleta (caso seja capitão ou membro aceito)
+    const teamDoc = await Team.findOne({
+      $or: [
+        { captainId: String(targetUser._id) },
+        {
+          members: {
+            $elemMatch: {
+              userId: String(targetUser._id),
+              status: { $ne: 'pending' },
+            },
+          },
+        },
+      ],
+    }).sort({ createdAt: -1 });
+
+    let teamPayload = null;
+    if (teamDoc) {
+      const formattedTeam = formatTeamForClient(teamDoc);
+      const acceptedMembers = (formattedTeam.members || []).filter(
+        (m) => m.status !== 'pending'
+      );
+      const memberIds = acceptedMembers.map((m) => String(m.userId));
+      const teamMatchesCount = await Match.countDocuments({
+        $or: [
+          { hostId: { $in: memberIds } },
+          { 'participants.userId': { $in: memberIds } },
+        ],
+      }).catch(() => 0);
+
+      teamPayload = {
+        ...formattedTeam,
+        members: acceptedMembers,
+        matchesPlayed: teamMatchesCount,
+      };
+    }
+
+    const publicPlayer = formatPublicPlayer(targetUser);
+    return res.json({
+      user: {
+        ...publicPlayer,
+        teamTag: targetUser.teamTag || teamPayload?.emblem?.tag || '',
+        team: teamPayload,
+      },
+      team: teamPayload,
+    });
   } catch (err) {
     return res.status(500).json({ message: err.message || 'Erro ao buscar perfil do jogador.' });
   }
@@ -2190,7 +2287,17 @@ app.get('/api/matches/my', async (req, res) => {
 
     const userId = String(decoded.sub);
     const matches = await Match.find({
-      $or: [{ hostId: userId }, { 'participants.userId': userId }],
+      $or: [
+        { hostId: userId },
+        {
+          participants: {
+            $elemMatch: {
+              userId,
+              requestStatus: { $in: ['approved', 'awaiting_payment'] },
+            },
+          },
+        },
+      ],
     }).sort({ createdAt: -1 });
 
     return res.json({
@@ -2464,10 +2571,10 @@ app.post('/api/matches/:id/participants/:targetUserId/respond', async (req, res)
       // Se a partida tiver divisão de valor e o jogador ainda não pagou, muda para aguardando pagamento e envia notificação ao solicitante
       if (requiresSplitPayment && !match.participants[partIdx].paymentConfirmed) {
         match.participants[partIdx].requestStatus = 'awaiting_payment';
-        match.participants[partIdx].role = `Aceito pelo Host • Aguardando Pagamento (R$ ${
+        match.participants[partIdx].role = `Aceito pelo Host • Aguardando confirmação de pagamento (R$ ${
           match.pricePerPlayer || 20
         },00)`;
-        match.participants[partIdx].status = 'Aprovado pelo Host • Aguardando Pagamento';
+        match.participants[partIdx].status = 'Aguardando confirmação de pagamento';
         match.markModified('participants');
         await match.save();
 
@@ -3249,6 +3356,260 @@ app.post('/api/notifications/read-all', async (req, res) => {
     return res.json({ ok: true });
   } catch (err) {
     return res.status(500).json({ message: err.message || 'Erro ao marcar notificações como lidas.' });
+  }
+});
+
+// ============================================================================
+// MODELO E ROTAS DE TIMES & CONVOCAÇÕES NO MONGODB
+// ============================================================================
+const TeamSchema = new mongoose.Schema(
+  {
+    captainId: { type: String, required: true, index: true },
+    captainName: { type: String, required: true },
+    name: { type: String, required: true, trim: true },
+    sport: { type: String, default: 'Futebol Society' },
+    emblem: {
+      tag: { type: String, default: 'SM' },
+      colorId: { type: String, default: 'neon' },
+      shapeId: { type: String, default: 'shield' },
+      iconId: { type: String, default: 'shield' },
+    },
+    members: {
+      type: [
+        {
+          userId: { type: String, required: true },
+          name: { type: String, default: '' },
+          nickname: { type: String, default: '' },
+          avatar: { type: String, default: '' },
+          ovr: { type: Number, default: 0 },
+          sport: { type: String, default: 'Atleta' },
+          isCaptain: { type: Boolean, default: false },
+          status: {
+            type: String,
+            enum: ['accepted', 'pending'],
+            default: 'accepted',
+          },
+        },
+      ],
+      default: [],
+    },
+  },
+  { timestamps: true }
+);
+
+const Team = mongoose.models.Team || mongoose.model('Team', TeamSchema);
+
+function formatTeamForClient(doc) {
+  const t = doc.toObject ? doc.toObject() : doc;
+  return {
+    ...t,
+    id: String(t._id),
+    _id: String(t._id),
+  };
+}
+
+// GET /api/teams/my - Lista times do usuário (capitão ou membro aceito) e convocações pendentes
+app.get('/api/teams/my', async (req, res) => {
+  try {
+    const decoded = getAuthenticatedUserFromReq(req);
+    if (!decoded || !decoded.sub) {
+      return res.status(401).json({ message: 'Não autorizado.' });
+    }
+    const userId = String(decoded.sub);
+
+    const allRelated = await Team.find({
+      $or: [{ captainId: userId }, { 'members.userId': userId }],
+    }).sort({ createdAt: -1 });
+
+    const teams = [];
+    const pendingInvites = [];
+
+    for (const doc of allRelated) {
+      const formatted = formatTeamForClient(doc);
+      const isCaptain = String(formatted.captainId) === userId;
+      const myMember = (formatted.members || []).find(
+        (m) => String(m.userId) === userId
+      );
+      if (isCaptain || myMember?.status === 'accepted') {
+        teams.push(formatted);
+      } else if (myMember?.status === 'pending') {
+        pendingInvites.push(formatted);
+      }
+    }
+
+    return res.json({ teams, pendingInvites });
+  } catch (err) {
+    return res.status(500).json({ message: err.message || 'Erro ao buscar times.' });
+  }
+});
+
+// POST /api/teams - Cria um novo time e envia notificação de convocação para os amigos escolhidos
+app.post('/api/teams', async (req, res) => {
+  try {
+    const decoded = getAuthenticatedUserFromReq(req);
+    if (!decoded || !decoded.sub) {
+      return res.status(401).json({ message: 'Não autorizado.' });
+    }
+    const captain = await User.findById(decoded.sub);
+    if (!captain) {
+      return res.status(404).json({ message: 'Usuário não encontrado.' });
+    }
+
+    const { name, sport, emblem, invitedMembers = [] } = req.body || {};
+    if (!name || !String(name).trim()) {
+      return res.status(400).json({ message: 'Informe o nome do time.' });
+    }
+
+    const captainId = String(captain._id);
+    const membersList = [
+      {
+        userId: captainId,
+        name: captain.name,
+        nickname: captain.nickname || '',
+        avatar: captain.avatar || '',
+        ovr: captain.ovr ?? 0,
+        sport: captain.favoriteSport || 'Atleta',
+        isCaptain: true,
+        status: 'accepted',
+      },
+    ];
+
+    const summonedIds = [];
+    for (const m of invitedMembers) {
+      const uid = String(m.userId || m.id || '');
+      if (!uid || uid === captainId) continue;
+      if (membersList.some((x) => x.userId === uid)) continue;
+      membersList.push({
+        userId: uid,
+        name: m.name || 'Atleta',
+        nickname: m.nickname || '',
+        avatar: m.avatar || '',
+        ovr: m.ovr ?? 0,
+        sport: m.sport || 'Atleta',
+        isCaptain: false,
+        status: 'pending',
+      });
+      summonedIds.push(uid);
+    }
+
+    const newTeam = await Team.create({
+      captainId,
+      captainName: captain.name,
+      name: String(name).trim(),
+      sport: sport || 'Futebol Society',
+      emblem: {
+        tag: String(emblem?.tag || name.slice(0, 3)).toUpperCase().slice(0, 4),
+        colorId: emblem?.colorId || 'neon',
+        shapeId: emblem?.shapeId || 'shield',
+        iconId: emblem?.iconId || 'shield',
+      },
+      members: membersList,
+    });
+
+    // Atualiza a tag do time no perfil do capitão
+    await User.findByIdAndUpdate(captainId, {
+      $set: { teamTag: newTeam.emblem.tag },
+    }).catch(() => {});
+
+    // Envia notificação de convocação para cada amigo convocado
+    if (summonedIds.length > 0) {
+      const notifs = summonedIds.map((uid) => ({
+        userId: uid,
+        type: 'team_invite',
+        title: `Convocação para o time "${newTeam.name}" 🛡️`,
+        message: `${captain.name} convocou você para integrar o time "${newTeam.name}" (${newTeam.sport}). Aceite ou recuse a convocação!`,
+        teamId: String(newTeam._id),
+        arenaName: newTeam.sport,
+        matchTitle: newTeam.name,
+        read: false,
+      }));
+      await Notification.insertMany(notifs).catch(() => {});
+    }
+
+    return res.status(201).json({
+      team: formatTeamForClient(newTeam),
+      message: `Time "${newTeam.name}" criado e convocações enviadas!`,
+    });
+  } catch (err) {
+    return res.status(500).json({ message: err.message || 'Erro ao criar time.' });
+  }
+});
+
+// POST /api/teams/:id/respond - Usuário convocado aceita ou recusa entrar no time
+app.post('/api/teams/:id/respond', async (req, res) => {
+  try {
+    const decoded = getAuthenticatedUserFromReq(req);
+    if (!decoded || !decoded.sub) {
+      return res.status(401).json({ message: 'Não autorizado.' });
+    }
+    const userId = String(decoded.sub);
+    const { action } = req.body || {}; // 'accept' | 'decline'
+
+    const team = await Team.findById(req.params.id);
+    if (!team) {
+      return res.status(404).json({ message: 'Time não encontrado.' });
+    }
+
+    const idx = team.members.findIndex((m) => String(m.userId) === userId);
+    if (idx < 0) {
+      return res.status(404).json({ message: 'Convocação não encontrada.' });
+    }
+
+    if (action === 'accept') {
+      team.members[idx].status = 'accepted';
+      team.markModified('members');
+      await team.save();
+      if (team.emblem?.tag) {
+        await User.findByIdAndUpdate(userId, {
+          $set: { teamTag: team.emblem.tag },
+        }).catch(() => {});
+      }
+    } else {
+      team.members.splice(idx, 1);
+      team.markModified('members');
+      await team.save();
+    }
+
+    // Marca a notificação de convocação como lida
+    await Notification.updateMany(
+      { userId, teamId: String(team._id), type: 'team_invite' },
+      { $set: { read: true } }
+    ).catch(() => {});
+
+    return res.json({
+      ok: true,
+      accepted: action === 'accept',
+      team: formatTeamForClient(team),
+      message:
+        action === 'accept'
+          ? `Você agora faz parte do time "${team.name}"!`
+          : `Convocação para o time "${team.name}" recusada.`,
+    });
+  } catch (err) {
+    return res.status(500).json({ message: err.message || 'Erro ao responder convocação.' });
+  }
+});
+
+// DELETE /api/teams/:id - Exclui time (capitão) ou sai do time (membro)
+app.delete('/api/teams/:id', async (req, res) => {
+  try {
+    const decoded = getAuthenticatedUserFromReq(req);
+    if (!decoded || !decoded.sub) {
+      return res.status(401).json({ message: 'Não autorizado.' });
+    }
+    const userId = String(decoded.sub);
+    const team = await Team.findById(req.params.id);
+    if (!team) return res.json({ ok: true });
+
+    if (String(team.captainId) === userId) {
+      await Team.findByIdAndDelete(team._id);
+    } else {
+      team.members = team.members.filter((m) => String(m.userId) !== userId);
+      await team.save();
+    }
+    return res.json({ ok: true });
+  } catch (err) {
+    return res.status(500).json({ message: err.message || 'Erro ao remover time.' });
   }
 });
 

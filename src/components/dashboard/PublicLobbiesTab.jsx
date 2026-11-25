@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { motion } from 'motion/react';
 import {
   MapPin,
   Send,
@@ -24,8 +25,8 @@ function detectLobbySport(lobby) {
   }
   const text = `${lobby.title || ''} ${lobby.arena || ''} ${lobby.sport || ''}`.toLowerCase();
   if (/beach\s*tennis|\bbt\b/.test(text)) return 'beachtennis';
-  if (/padel|t[eê]nis/.test(text)) return 'padel';
   if (/futev[oô]lei/.test(text)) return 'futevolei';
+  if (/v[oô]lei/.test(text)) return 'volei';
   return 'society';
 }
 
@@ -70,31 +71,39 @@ export default function PublicLobbiesTab({
                 : activeValidLobbies.filter((l) => detectLobbySport(l) === cat.id).length;
 
             return (
-              <button
+              <motion.button
                 key={cat.id}
                 type="button"
+                whileTap={{ scale: 0.95 }}
                 onClick={() => setSelectedSport(cat.id)}
-                className={`shrink-0 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold border transition-all flex items-center gap-2 ${
+                className={`relative shrink-0 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold border transition-colors flex items-center gap-2 ${
                   active
-                    ? 'bg-neon text-dark-950 border-neon shadow-neon'
+                    ? 'text-dark-950 border-transparent'
                     : 'bg-dark-900/90 text-slate-300 border-white/10 hover:border-white/25'
                 }`}
               >
-                <span>{cat.name}</span>
+                {active && (
+                  <motion.span
+                    layoutId="lobbiesSportFilterPill"
+                    transition={{ type: 'spring', stiffness: 420, damping: 30 }}
+                    className="absolute inset-0 rounded-xl bg-neon shadow-neon"
+                  />
+                )}
+                <span className="relative z-10">{cat.name}</span>
                 <span
-                  className={`text-[11px] px-1.5 py-0.5 rounded-md ${
+                  className={`relative z-10 text-[11px] px-1.5 py-0.5 rounded-md ${
                     active ? 'bg-dark-950/20 text-dark-950' : 'bg-white/5 text-slate-400'
                   }`}
                 >
                   {count}
                 </span>
-              </button>
+              </motion.button>
             );
           })}
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 shrink-0">
-          {onOpenLocationModal && (
+        {onOpenLocationModal && (
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
             <button
               type="button"
               onClick={onOpenLocationModal}
@@ -105,34 +114,12 @@ export default function PublicLobbiesTab({
               }`}
             >
               <Navigation className="w-3.5 h-3.5" />
-              <span className="max-w-[140px] truncate">
+              <span className="max-w-[160px] truncate">
                 {userLocation?.label || 'Definir Região'}
               </span>
             </button>
-          )}
-
-          {onRadiusChange && (
-            <div className="flex items-center gap-1.5">
-              <span className="text-xs font-semibold text-slate-400 flex items-center gap-1 mr-0.5">
-                <MapPin className="w-3.5 h-3.5 text-neon" /> Raio:
-              </span>
-              {[2, 5, 10, 20].map((km) => (
-                <button
-                  key={km}
-                  type="button"
-                  onClick={() => onRadiusChange(km)}
-                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-colors ${
-                    maxRadius === km
-                      ? 'bg-neon text-dark-950'
-                      : 'bg-dark-900/90 text-slate-300 border border-white/10 hover:border-white/25'
-                  }`}
-                >
-                  {km} km
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       {/* Public Lobbies Grid */}

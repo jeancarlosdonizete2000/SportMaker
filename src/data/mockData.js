@@ -2,7 +2,7 @@ export const SPORTS_CATEGORIES = [
   { id: 'all', name: 'Todos', count: 0 },
   { id: 'society', name: 'Futebol Society', count: 0 },
   { id: 'beachtennis', name: 'Beach Tennis', count: 0 },
-  { id: 'padel', name: 'Padel & Tênis', count: 0 },
+  { id: 'volei', name: 'Vôlei', count: 0 },
   { id: 'futevolei', name: 'Futevôlei', count: 0 },
 ];
 

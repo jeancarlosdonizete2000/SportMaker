@@ -40,6 +40,10 @@ export const authService = {
     localStorage.removeItem(STORAGE_USER_KEY);
     localStorage.removeItem(STORAGE_TOKEN_KEY);
     clientCache.clearAll();
+    fetch(`${MONGO_CONFIG.restApiUrl}/auth/logout`, {
+      method: 'POST',
+      credentials: 'include',
+    }).catch(() => {});
   },
 
   /**
@@ -53,6 +57,7 @@ export const authService = {
     try {
       response = await fetch(`${MONGO_CONFIG.restApiUrl}/auth/login`, {
         method: 'POST',
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
         },
@@ -88,6 +93,7 @@ export const authService = {
     try {
       response = await fetch(`${MONGO_CONFIG.restApiUrl}/auth/register`, {
         method: 'POST',
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
         },
@@ -117,6 +123,7 @@ export const authService = {
   async loginWithGoogle({ credential, role }) {
     const response = await fetch(`${MONGO_CONFIG.restApiUrl}/auth/google`, {
       method: 'POST',
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ credential, role }),
     });

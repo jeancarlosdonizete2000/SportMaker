@@ -763,7 +763,7 @@ export default function ArenaDetailsPage({
 
           <div className="flex flex-wrap items-center gap-2">
             {[
-              { count: 4, label: '4 (Duplas / BT / Padel)' },
+              { count: 4, label: '4 (Duplas / BT / Vôlei)' },
               { count: 8, label: '8 (4x4)' },
               { count: 10, label: '10 (Futsal 5x5)' },
               { count: 12, label: '12 (Society 6x6)' },

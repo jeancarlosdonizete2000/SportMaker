@@ -553,5 +553,55 @@ export const ownerService = {
     });
     return response.ok;
   },
+
+  /**
+   * Times do usuário (criados, aceitos e convocações pendentes)
+   */
+  async getMyTeams() {
+    const response = await fetch(`${MONGO_CONFIG.restApiUrl}/teams/my`, {
+      method: 'GET',
+      headers: getAuthHeaders(),
+    });
+    const data = await response.json().catch(() => ({ teams: [], pendingInvites: [] }));
+    if (!response.ok) return { teams: [], pendingInvites: [] };
+    return {
+      teams: data.teams || [],
+      pendingInvites: data.pendingInvites || [],
+    };
+  },
+
+  async createTeam(payload) {
+    const response = await fetch(`${MONGO_CONFIG.restApiUrl}/teams`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(payload),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data.message || 'Erro ao criar time.');
+    }
+    return data;
+  },
+
+  async respondToTeamInvite(teamId, action) {
+    const response = await fetch(`${MONGO_CONFIG.restApiUrl}/teams/${teamId}/respond`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ action }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data.message || 'Erro ao responder convocação.');
+    }
+    return data;
+  },
+
+  async deleteTeam(teamId) {
+    const response = await fetch(`${MONGO_CONFIG.restApiUrl}/teams/${teamId}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+    });
+    return response.ok;
+  },
 };
 

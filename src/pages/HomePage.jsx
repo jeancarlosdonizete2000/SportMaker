@@ -20,6 +20,57 @@ const BookingModal = lazy(() => import('../components/modals/BookingModal'));
 const CreateMatchModal = lazy(() => import('../components/modals/CreateMatchModal'));
 const LocationConsentModal = lazy(() => import('../components/modals/LocationConsentModal'));
 
+const SHOWCASE_LANDING_LOBBIES = [
+  {
+    id: 'showcase_1',
+    title: 'Society 7x7 Competitivo • Nível Intermediário/Avançado',
+    arena: 'Arena Prime Sports & Lounge • Quadra 1 FIFA Pro',
+    distance: '1.2 km',
+    time: 'Hoje, 20:00',
+    totalSlots: 14,
+    filledSlots: 11,
+    pricePerPlayer: 22,
+    neededPositions: ['Goleiro', 'Zagueiro', 'Atacante'],
+    host: {
+      name: 'Rafael "R10" Oliveira',
+      rating: 91,
+      avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=200&q=80',
+    },
+  },
+  {
+    id: 'showcase_2',
+    title: 'Beach Tennis Duplas Mistas • Resenha & 3º Tempo',
+    arena: 'Sunset Beach Club • Quadra Areia 3',
+    distance: '2.1 km',
+    time: 'Hoje, 19:30',
+    totalSlots: 8,
+    filledSlots: 6,
+    pricePerPlayer: 30,
+    neededPositions: ['Categoria B', 'Categoria C'],
+    host: {
+      name: 'Mariana Costa',
+      rating: 89,
+      avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=200&q=80',
+    },
+  },
+  {
+    id: 'showcase_3',
+    title: 'Futevôlei Altinha & Rachão • Pós-Expediente',
+    arena: 'Vila Arena Beach • Quadra Principal',
+    distance: '3.4 km',
+    time: 'Amanhã, 18:30',
+    totalSlots: 8,
+    filledSlots: 5,
+    pricePerPlayer: 25,
+    neededPositions: ['Levantador', 'Atacante'],
+    host: {
+      name: 'Lucas "Paredão" Mendes',
+      rating: 93,
+      avatar: '/players/hero-player-16.jpg',
+    },
+  },
+];
+
 export default function HomePage({
   onRequireAuth,
   onNavigateLogin,
@@ -30,25 +81,44 @@ export default function HomePage({
   const { user, isAuthenticated } = useAuth();
   const navigate = useNavigate();
 
+  const redirectToLoginFromLanding = (reason) => {
+    onRequireAuth({
+      role: 'player',
+      reason:
+        reason ||
+        'Faça login ou crie sua conta para agendar horários, entrar em lobbies e criar partidas.',
+    });
+  };
+
   const handleViewArenaDetails = (arena) => {
-    if (isAuthenticated) {
-      navigate(`/app/arena/${arena.id}`);
-    } else {
-      navigate(`/arena/${arena.id}`);
+    if (!isAuthenticated) {
+      redirectToLoginFromLanding(
+        `Faça login para ver os horários e reservar na ${arena?.name || 'arena'}.`
+      );
+      return;
     }
+    navigate(`/app/arena/${arena.id}`);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleGoLobbyClick = () => {
-    if (isAuthenticated) {
-      navigate('/app/lobbies');
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+    if (!isAuthenticated) {
+      redirectToLoginFromLanding('Faça login para acessar o Lobby de Partidas.');
       return;
     }
-    const communityEl = document.getElementById('comunidade');
-    if (communityEl) {
-      communityEl.scrollIntoView({ behavior: 'smooth' });
+    navigate('/app/lobbies');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleLandingSelectSlot = () => {
+    if (!isAuthenticated) {
+      redirectToLoginFromLanding(
+        'Faça login para escolher um horário e confirmar sua reserva.'
+      );
+      return;
     }
+    navigate('/app/arenas');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   // Arena Explorer & Search Filters State (Inicializa instantaneamente com cache local da máquina do usuário)
@@ -57,6 +127,43 @@ export default function HomePage({
   const [searchQuery, setSearchQuery] = useState('');
   const [maxRadius, setMaxRadius] = useState(5);
   const [locationModalOpen, setLocationModalOpen] = useState(false);
+
+  // Assim que o usuário aceitar os termos (ou se já aceitou e ainda não tem localização), solicita GPS real automaticamente
+  useEffect(() => {
+    const requestRealLocation = async () => {
+      try {
+        locationService.saveConsent(true);
+        const loc = await locationService.requestBrowserGpsLocation();
+        if (loc) {
+          locationService.saveLocation(loc);
+          setUserLocation(loc);
+        }
+      } catch {
+        // Usuário recusou ou GPS indisponível no navegador
+      }
+    };
+
+    const handleTermsAccepted = () => {
+      requestRealLocation();
+    };
+
+    window.addEventListener('sportmaker:terms-accepted', handleTermsAccepted);
+
+    try {
+      const termsSaved = JSON.parse(
+        localStorage.getItem('sportmaker_terms_accepted_v1') || 'null'
+      );
+      if (termsSaved?.accepted && !locationService.getStoredLocation()?.lat) {
+        requestRealLocation();
+      }
+    } catch {
+      // ignora
+    }
+
+    return () => {
+      window.removeEventListener('sportmaker:terms-accepted', handleTermsAccepted);
+    };
+  }, []);
 
   useEffect(() => {
     ownerService
@@ -69,15 +176,6 @@ export default function HomePage({
               id: a._id,
             }))
           );
-        }
-      })
-      .catch(() => {});
-
-    ownerService
-      .getPublicLobbies()
-      .then((list) => {
-        if (Array.isArray(list)) {
-          setLobbies(list);
         }
       })
       .catch(() => {});
@@ -95,8 +193,8 @@ export default function HomePage({
     4: '20:00',
   });
 
-  // Lobbies & Create Match Modal State (Inicializa instantaneamente com cache local)
-  const [lobbies, setLobbies] = useState(() => ownerService.getCachedPublicLobbies());
+  // Lobbies fictícios exclusivos para demonstração na Landing Page (não exibe partidas reais de usuários)
+  const [lobbies, setLobbies] = useState(SHOWCASE_LANDING_LOBBIES);
   const [createMatchModalOpen, setCreateMatchModalOpen] = useState(false);
 
   // Booking Flow Custom Hook
@@ -195,15 +293,27 @@ export default function HomePage({
           arena.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
           arena.neighborhood.toLowerCase().includes(searchQuery.toLowerCase()) ||
           arena.sportLabel.toLowerCase().includes(searchQuery.toLowerCase());
-        const numericDistance =
-          arena.distanceKmValue !== undefined
-            ? arena.distanceKmValue
-            : parseFloat(String(arena.distance || '0').replace(',', '.')) || 0;
-        const matchesRadius = !userLocation?.lat || numericDistance <= maxRadius;
-        return matchesSport && matchesQuery && matchesRadius;
+        if (!userLocation?.label && !userLocation?.city && !userLocation?.lat) {
+          return matchesSport && matchesQuery;
+        }
+        const norm = (val) =>
+          String(val || '')
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .toLowerCase()
+            .trim();
+        const myCity = norm(
+          userLocation.city || (userLocation.label ? userLocation.label.split(/[,-]/)[0] : '')
+        );
+        const arenaRegion = norm(`${arena.neighborhood || ''} ${arena.address || ''}`);
+        const matchesRegion =
+          (myCity && arenaRegion.includes(myCity)) ||
+          (userLocation?.lat && arena.distanceKmValue !== undefined && arena.distanceKmValue <= 50) ||
+          !myCity;
+        return matchesSport && matchesQuery && matchesRegion;
       })
       .sort((a, b) => (a.distanceKmValue ?? 9999) - (b.distanceKmValue ?? 9999));
-  }, [dbArenas, selectedCategory, searchQuery, userLocation, maxRadius]);
+  }, [dbArenas, selectedCategory, searchQuery, userLocation]);
 
   return (
     <MainLayout
@@ -220,8 +330,8 @@ export default function HomePage({
         maxRadius={maxRadius}
         onRadiusChange={setMaxRadius}
         selectedSlotForFeatured={selectedSlots[1]}
-        onSelectSlotForFeatured={handleSelectSlot}
-        onOpenBooking={handleViewArenaDetails}
+        onSelectSlotForFeatured={handleLandingSelectSlot}
+        onOpenBooking={handleProtectedBooking}
         userLocation={userLocation}
         onOpenLocationModal={() => setLocationModalOpen(true)}
       />
@@ -232,7 +342,7 @@ export default function HomePage({
         selectedCategory={selectedCategory}
         onCategoryChange={setSelectedCategory}
         selectedSlots={selectedSlots}
-        onSelectSlot={handleSelectSlot}
+        onSelectSlot={handleLandingSelectSlot}
         onOpenBooking={handleProtectedBooking}
         onViewArenaDetails={handleViewArenaDetails}
       />

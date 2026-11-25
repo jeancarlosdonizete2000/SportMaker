@@ -9,13 +9,14 @@ function extractShortPosition(role = '') {
   if (r.includes('meia') || r.includes('armador')) return 'MEI';
   if (r.includes('ala') || r.includes('ponta')) return 'ALA';
   if (r.includes('beach') || r.includes('bt')) return 'BT';
-  if (r.includes('padel') || r.includes('tenis') || r.includes('tênis')) return 'PDL';
+  if (r.includes('volei') || r.includes('vôlei')) return 'VOL';
   if (r.includes('futevolei') || r.includes('futevôlei')) return 'FTV';
   return 'ATA';
 }
 
-export default function PlayerCard({ player, theme, customTag }) {
-  const [isMobileExpanded, setIsMobileExpanded] = useState(false);
+export default function PlayerCard({ player, theme, customTag, alwaysExpanded = false }) {
+  const [isMobileExpandedState, setIsMobileExpandedState] = useState(alwaysExpanded);
+  const isMobileExpanded = alwaysExpanded || isMobileExpandedState;
   const [isInteracting, setIsInteracting] = useState(false);
   const [isHolding, setIsHolding] = useState(false);
   const [avatarError, setAvatarError] = useState(false);
@@ -146,12 +147,13 @@ export default function PlayerCard({ player, theme, customTag }) {
   };
 
   const handleCardClick = () => {
+    if (alwaysExpanded) return;
     // Se o usuário segurou/arrastou para admirar o brilho prismático, não alterna o estado compacto no mobile
     const heldMs = Date.now() - pointerStartRef.current.time;
     if (pointerStartRef.current.dragged || (isProCard && heldMs > 260)) {
       return;
     }
-    setIsMobileExpanded((prev) => !prev);
+    setIsMobileExpandedState((prev) => !prev);
   };
 
   const stats = player.stats || {
@@ -327,7 +329,7 @@ export default function PlayerCard({ player, theme, customTag }) {
         transition={{ type: 'spring', stiffness: 300, damping: 24 }}
         className="relative"
       >
-        {/* Aura Prismática Externa para Cards PRO com brilho habilitado */}
+        {/* Aura Prismática Externa para Cards PRO (ativa apenas ao interagir/segurar) */}
         {prismaticConfig.hasGlow && (
           <div
             className={`absolute -inset-2.5 rounded-[40px] bg-gradient-to-tr ${prismaticConfig.auraGradient} blur-2xl pointer-events-none transition-opacity duration-300 ${
@@ -335,9 +337,7 @@ export default function PlayerCard({ player, theme, customTag }) {
                 ? 'opacity-65'
                 : isInteracting
                   ? 'opacity-45'
-                  : theme.id === 'card-future-stars-pro'
-                    ? 'opacity-45 animate-pulse'
-                    : 'opacity-15'
+                  : 'opacity-0'
             }`}
             style={{
               WebkitMaskImage:
@@ -444,9 +444,9 @@ export default function PlayerCard({ player, theme, customTag }) {
                 </div>
               </div>
 
-              {/* Retrato do Jogador Estilo Cartinha EA FC */}
+              {/* Retrato do Jogador Estilo Cartinha EA FC (Tamanho Máximo) */}
               <div className="col-span-8 flex flex-col items-center justify-center relative">
-                <div className="relative">
+                <div className="relative w-full flex items-center justify-center">
                   {player.avatar && !avatarError ? (
                     <img
                       src={player.avatar}
@@ -455,12 +455,12 @@ export default function PlayerCard({ player, theme, customTag }) {
                       onError={() => setAvatarError(true)}
                       className={
                         theme.bgImage
-                          ? `${
-                              isMobileExpanded ? 'w-36 h-40' : 'w-28 h-32'
-                            } md:w-44 md:h-48 object-cover object-top transition-all duration-300 drop-shadow-[0_10px_18px_rgba(0,0,0,0.65)]`
-                          : `${
-                              isMobileExpanded ? 'w-32 h-32' : 'w-24 h-24'
-                            } md:w-36 md:h-36 rounded-2xl object-cover object-top border-2 shadow-2xl transition-all duration-300 ${
+                          ? `w-full ${
+                              isMobileExpanded ? 'h-52' : 'h-40'
+                            } md:h-60 object-contain object-bottom scale-110 transition-all duration-300 drop-shadow-[0_12px_20px_rgba(0,0,0,0.7)]`
+                          : `w-full ${
+                              isMobileExpanded ? 'h-44' : 'h-32'
+                            } md:h-48 rounded-2xl object-cover object-top border-2 shadow-2xl transition-all duration-300 ${
                               isGold
                                 ? 'border-amber-300'
                                 : isLightning
@@ -531,8 +531,8 @@ export default function PlayerCard({ player, theme, customTag }) {
             </div>
 
             {/* =================================================================
-                CAMADAS PRISMÁTICAS HOLOGRÁFICAS (COR CUSTOMIZADA POR CARTA PRO)
-                Reagem à inclinação 3D quando você segura ou passa o cursor/dedo
+                CAMADAS PRISMÁTICAS HOLOGRÁFICAS (ATIVAS APENAS AO INTERAGIR/SEGURAR)
+                Enquanto estática, opacidade = 0 para manter a foto 100% nítida
                ================================================================= */}
             {prismaticConfig.hasGlow && (
               <div
@@ -541,11 +541,9 @@ export default function PlayerCard({ player, theme, customTag }) {
               >
                 {/* Camada 1: Refração Prismática Customizada (Color-Dodge suave) */}
                 <div
-                  className={`absolute inset-0 prismatic-holo-layer ${prismaticConfig.holoClass} ${
-                    !isInteracting ? 'prismatic-holo-idle' : ''
-                  }`}
+                  className={`absolute inset-0 prismatic-holo-layer ${prismaticConfig.holoClass}`}
                   style={{
-                    opacity: isHolding ? 0.56 : isInteracting ? 0.4 : 0.14,
+                    opacity: isHolding ? 0.56 : isInteracting ? 0.4 : 0,
                   }}
                 />
 
@@ -553,7 +551,7 @@ export default function PlayerCard({ player, theme, customTag }) {
                 <div
                   className={`absolute inset-0 prismatic-foil-beams ${prismaticConfig.beamsClass}`}
                   style={{
-                    opacity: isHolding ? 0.48 : isInteracting ? 0.32 : 0.08,
+                    opacity: isHolding ? 0.48 : isInteracting ? 0.32 : 0,
                   }}
                 />
 

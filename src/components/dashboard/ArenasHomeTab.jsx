@@ -20,8 +20,7 @@ import { SPORTS_CATEGORIES } from '../../data/mockData';
 
 const SORT_OPTIONS = [
   { id: 'distance', label: 'Mais próximas' },
-  { id: 'rating', label: 'Melhor avaliação' },
-  { id: 'matches', label: 'Mais partidas disputadas' },
+  { id: 'rating', label: 'Mais avaliadas' },
 ];
 
 const AMENITY_FILTERS = [
@@ -97,18 +96,28 @@ export default function ArenasHomeTab({
     );
   };
 
-  const arenasInRadius = useMemo(
-    () =>
-      allArenas.filter((arena) => {
-        if (!userLocation?.lat) return true;
-        const numericDistance =
-          arena.distanceKmValue !== undefined
-            ? arena.distanceKmValue
-            : parseFloat(String(arena.distance || '0').replace(',', '.')) || 0;
-        return numericDistance <= maxRadius;
-      }),
-    [allArenas, userLocation, maxRadius]
-  );
+  const arenasInRadius = useMemo(() => {
+    if (!userLocation?.label && !userLocation?.city && !userLocation?.lat) {
+      return allArenas;
+    }
+    const norm = (val) =>
+      String(val || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .trim();
+    const myCity = norm(
+      userLocation.city || (userLocation.label ? userLocation.label.split(/[,-]/)[0] : '')
+    );
+    return allArenas.filter((arena) => {
+      const regionText = norm(`${arena.neighborhood || ''} ${arena.address || ''}`);
+      if (myCity && regionText.includes(myCity)) return true;
+      if (userLocation?.lat && arena.distanceKmValue !== undefined) {
+        return arena.distanceKmValue <= 50;
+      }
+      return !myCity;
+    });
+  }, [allArenas, userLocation]);
 
   const displayedArenas = useMemo(() => {
     const filtered = arenas.filter((arena) => {
@@ -125,12 +134,6 @@ export default function ArenasHomeTab({
         const diff = (Number(b.rating) || 0) - (Number(a.rating) || 0);
         if (diff !== 0) return diff;
         return (Number(b.reviewsCount) || 0) - (Number(a.reviewsCount) || 0);
-      });
-    } else if (sortBy === 'matches') {
-      sorted.sort((a, b) => {
-        const aScore = (a.bookedSlots?.length || 0) + (Number(a.reviewsCount) || 0);
-        const bScore = (b.bookedSlots?.length || 0) + (Number(b.reviewsCount) || 0);
-        return bScore - aScore;
       });
     }
     return sorted;
@@ -215,49 +218,36 @@ export default function ArenasHomeTab({
                 ? arenasInRadius.length
                 : arenasInRadius.filter((a) => a.sport === cat.id).length;
             return (
-              <button
+              <motion.button
                 key={cat.id}
+                type="button"
+                whileTap={{ scale: 0.95 }}
                 onClick={() => onCategoryChange(cat.id)}
-                className={`shrink-0 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold border transition-all flex items-center gap-2 ${
+                className={`relative shrink-0 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold border transition-colors flex items-center gap-2 ${
                   active
-                    ? 'bg-neon text-dark-950 border-neon shadow-neon'
+                    ? 'text-dark-950 border-transparent'
                     : 'bg-dark-900/90 text-slate-300 border-white/10 hover:border-white/25'
                 }`}
               >
-                <span>{cat.name}</span>
+                {active && (
+                  <motion.span
+                    layoutId="arenasSportFilterPill"
+                    transition={{ type: 'spring', stiffness: 420, damping: 30 }}
+                    className="absolute inset-0 rounded-xl bg-neon shadow-neon"
+                  />
+                )}
+                <span className="relative z-10">{cat.name}</span>
                 <span
-                  className={`text-[11px] px-1.5 py-0.5 rounded-md ${
+                  className={`relative z-10 text-[11px] px-1.5 py-0.5 rounded-md ${
                     active ? 'bg-dark-950/20 text-dark-950' : 'bg-white/5 text-slate-400'
                   }`}
                 >
                   {realCount}
                 </span>
-              </button>
+              </motion.button>
             );
           })}
         </div>
-
-        {onRadiusChange && (
-          <div className="flex items-center gap-1.5 shrink-0">
-            <span className="text-xs font-semibold text-slate-400 flex items-center gap-1 mr-1">
-              <MapPin className="w-3.5 h-3.5 text-neon" /> Raio:
-            </span>
-            {[2, 5, 10, 20].map((km) => (
-              <button
-                key={km}
-                type="button"
-                onClick={() => onRadiusChange(km)}
-                className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-colors ${
-                  maxRadius === km
-                    ? 'bg-neon text-dark-950'
-                    : 'bg-dark-900/90 text-slate-300 border border-white/10 hover:border-white/25'
-                }`}
-              >
-                {km} km
-              </button>
-            ))}
-          </div>
-        )}
       </div>
 
       {/* Barra: Classificar Por + Filtros de Comodidades (Churrasqueira, Bebidas, Refeições) */}

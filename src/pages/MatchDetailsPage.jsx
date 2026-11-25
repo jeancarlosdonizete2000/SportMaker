@@ -648,11 +648,16 @@ export default function MatchDetailsPage({
 
           <button
             type="button"
-            onClick={() => setPaymentModalOpen(true)}
-            className="shrink-0 px-6 py-3.5 rounded-2xl bg-amber-400 hover:bg-amber-300 text-dark-950 font-display font-black text-xs sm:text-sm shadow-[0_0_20px_rgba(251,191,36,0.45)] transition-all flex items-center justify-center gap-2"
+            disabled={payingShare}
+            onClick={handleConfirmMatchPayment}
+            className="shrink-0 px-6 py-3.5 rounded-2xl bg-amber-400 hover:bg-amber-300 disabled:opacity-60 text-dark-950 font-display font-black text-xs sm:text-sm shadow-[0_0_20px_rgba(251,191,36,0.45)] transition-all flex items-center justify-center gap-2"
           >
             <CreditCard className="w-4 h-4" />
-            <span>Realizar Pagamento (R$ {match.pricePerPlayer || 20},00)</span>
+            <span>
+              {payingShare
+                ? 'Liberando acesso...'
+                : `Realizar Pagamento (R$ ${match.pricePerPlayer || 20},00)`}
+            </span>
           </button>
         </div>
       )}

@@ -43,11 +43,10 @@ export default function Navbar({ onNavigateLogin, onCreateMatchClick, onEnterUse
 
   return (
     <header
-      className={`sticky top-0 z-40 border-b transition-all duration-300 ${
-        showGlassBar
+      className={`sticky top-0 z-40 border-b transition-all duration-300 ${showGlassBar
           ? 'border-white/10 bg-dark-950/85 backdrop-blur-xl shadow-[0_8px_30px_rgba(0,0,0,0.45)]'
           : 'border-transparent bg-transparent backdrop-blur-none'
-      }`}
+        }`}
     >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 sm:h-20 flex items-center justify-between">
         {/* Brand Logo */}
@@ -78,7 +77,7 @@ export default function Navbar({ onNavigateLogin, onCreateMatchClick, onEnterUse
             <Users className="w-4 h-4 text-emerald-400" /> Partidas & Amigos
           </a>
           <a href="#perfil-gamer" className="hover:text-neon transition-colors flex items-center gap-1.5">
-            <Trophy className="w-4 h-4 text-amber-400" /> Perfil & Rating
+            <Trophy className="w-4 h-4 text-amber-400" /> Player Card
           </a>
           <a href="#proprietarios" className="hover:text-neon transition-colors flex items-center gap-1.5">
             <Store className="w-4 h-4 text-cyan-400" /> Para Arenas
@@ -141,13 +140,16 @@ export default function Navbar({ onNavigateLogin, onCreateMatchClick, onEnterUse
           )}
         </div>
 
-        {/* Mobile Menu Toggle */}
+        {/* Mobile Direct Login Button */}
         <button
-          onClick={() => setMobileMenuOpen((prev) => !prev)}
-          className="md:hidden p-2.5 rounded-xl bg-white/5 border border-white/10 text-slate-200 hover:text-neon transition-colors"
-          aria-label={mobileMenuOpen ? 'Fechar Menu' : 'Abrir Menu'}
+          type="button"
+          onClick={() =>
+            isAuthenticated ? onEnterUserHome() : onNavigateLogin('player')
+          }
+          className="md:hidden px-4 py-2 rounded-xl bg-neon hover:bg-emerald-400 text-dark-950 font-display font-extrabold text-xs shadow-neon transition-all flex items-center gap-1.5"
         >
-          <MenuIcon ref={menuIconRef} size={22} />
+          <LogIn className="w-4 h-4 stroke-[2.5]" />
+          <span>{isAuthenticated ? 'Meu Painel' : 'Login'}</span>
         </button>
       </div>
 
@@ -162,108 +164,108 @@ export default function Navbar({ onNavigateLogin, onCreateMatchClick, onEnterUse
             className="md:hidden overflow-hidden border-t border-white/10 bg-dark-900/95 backdrop-blur-xl"
           >
             <div className="px-4 pt-4 pb-6 space-y-3">
-          {isAuthenticated ? (
-            <div className="flex items-center justify-between p-3 rounded-xl bg-neon/10 border border-neon/30">
-              <div className="flex items-center gap-2.5">
-                {user.avatar ? (
-                  <img
-                    src={user.avatar}
-                    alt={user.name}
-                    className="w-9 h-9 rounded-full object-cover border border-neon"
-                  />
-                ) : (
-                  <div className="w-9 h-9 rounded-full bg-dark-900 border border-neon flex items-center justify-center text-xs font-display font-black text-neon">
-                    {(user.name || 'AT')
-                      .split(' ')
-                      .slice(0, 2)
-                      .map((n) => n[0])
-                      .join('')
-                      .toUpperCase()}
+              {isAuthenticated ? (
+                <div className="flex items-center justify-between p-3 rounded-xl bg-neon/10 border border-neon/30">
+                  <div className="flex items-center gap-2.5">
+                    {user.avatar ? (
+                      <img
+                        src={user.avatar}
+                        alt={user.name}
+                        className="w-9 h-9 rounded-full object-cover border border-neon"
+                      />
+                    ) : (
+                      <div className="w-9 h-9 rounded-full bg-dark-900 border border-neon flex items-center justify-center text-xs font-display font-black text-neon">
+                        {(user.name || 'AT')
+                          .split(' ')
+                          .slice(0, 2)
+                          .map((n) => n[0])
+                          .join('')
+                          .toUpperCase()}
+                      </div>
+                    )}
+                    <div>
+                      <p className="text-xs font-bold text-white">{user.name}</p>
+                      <p className="text-[10px] text-neon font-semibold uppercase">
+                        {user.role === 'owner' ? 'Proprietário de Arena' : 'Atleta Verificado'}
+                      </p>
+                    </div>
                   </div>
-                )}
-                <div>
-                  <p className="text-xs font-bold text-white">{user.name}</p>
-                  <p className="text-[10px] text-neon font-semibold uppercase">
-                    {user.role === 'owner' ? 'Proprietário de Arena' : 'Atleta Verificado'}
-                  </p>
+                  <button
+                    onClick={() => {
+                      logout();
+                      setMobileMenuOpen(false);
+                    }}
+                    className="px-2.5 py-1.5 rounded-lg bg-white/10 text-xs font-bold text-red-300"
+                  >
+                    Sair
+                  </button>
                 </div>
-              </div>
-              <button
-                onClick={() => {
-                  logout();
-                  setMobileMenuOpen(false);
-                }}
-                className="px-2.5 py-1.5 rounded-lg bg-white/10 text-xs font-bold text-red-300"
-              >
-                Sair
-              </button>
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                onClick={() => {
-                  setMobileMenuOpen(false);
-                  onNavigateLogin('player');
-                }}
-                className="p-3 rounded-xl bg-neon text-dark-950 font-display font-extrabold text-xs flex items-center justify-center gap-1.5"
-              >
-                <LogIn className="w-4 h-4" /> Login Atleta
-              </button>
-              <button
-                onClick={() => {
-                  setMobileMenuOpen(false);
-                  onNavigateLogin('owner');
-                }}
-                className="p-3 rounded-xl bg-emerald-400 text-dark-950 font-display font-extrabold text-xs flex items-center justify-center gap-1.5"
-              >
-                <Store className="w-4 h-4" /> Login Arena
-              </button>
-            </div>
-          )}
+              ) : (
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => {
+                      setMobileMenuOpen(false);
+                      onNavigateLogin('player');
+                    }}
+                    className="p-3 rounded-xl bg-neon text-dark-950 font-display font-extrabold text-xs flex items-center justify-center gap-1.5"
+                  >
+                    <LogIn className="w-4 h-4" /> Login Atleta
+                  </button>
+                  <button
+                    onClick={() => {
+                      setMobileMenuOpen(false);
+                      onNavigateLogin('owner');
+                    }}
+                    className="p-3 rounded-xl bg-emerald-400 text-dark-950 font-display font-extrabold text-xs flex items-center justify-center gap-1.5"
+                  >
+                    <Store className="w-4 h-4" /> Login Arena
+                  </button>
+                </div>
+              )}
 
-          <button
-            onClick={() => {
-              setMobileMenuOpen(false);
-              onCreateMatchClick();
-            }}
-            className="w-full flex items-center justify-between p-3 rounded-xl bg-neon/15 border border-neon/40 text-neon font-bold"
-          >
-            <span className="flex items-center gap-2.5">
-              <Users className="w-4 h-4" /> Lobby de Partidas
-            </span>
-            <ChevronRight className="w-4 h-4" />
-          </button>
+              <button
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  onCreateMatchClick();
+                }}
+                className="w-full flex items-center justify-between p-3 rounded-xl bg-neon/15 border border-neon/40 text-neon font-bold"
+              >
+                <span className="flex items-center gap-2.5">
+                  <Users className="w-4 h-4" /> Lobby de Partidas
+                </span>
+                <ChevronRight className="w-4 h-4" />
+              </button>
 
-          <a
-            href="#explorar"
-            onClick={() => setMobileMenuOpen(false)}
-            className="flex items-center justify-between p-3 rounded-xl bg-white/5 text-slate-100 font-semibold"
-          >
-            <span className="flex items-center gap-2.5">
-              <MapPin className="w-4 h-4 text-neon" /> Arenas por Proximidade
-            </span>
-            <ChevronRight className="w-4 h-4 text-slate-400" />
-          </a>
-          <a
-            href="#comunidade"
-            onClick={() => setMobileMenuOpen(false)}
-            className="flex items-center justify-between p-3 rounded-xl bg-white/5 text-slate-100 font-semibold"
-          >
-            <span className="flex items-center gap-2.5">
-              <Users className="w-4 h-4 text-emerald-400" /> Fazer Amizades & Lobbies
-            </span>
-            <ChevronRight className="w-4 h-4 text-slate-400" />
-          </a>
-          <a
-            href="#perfil-gamer"
-            onClick={() => setMobileMenuOpen(false)}
-            className="flex items-center justify-between p-3 rounded-xl bg-white/5 text-slate-100 font-semibold"
-          >
-            <span className="flex items-center gap-2.5">
-              <Trophy className="w-4 h-4 text-amber-400" /> Perfil Personalizável & OVR
-            </span>
-            <ChevronRight className="w-4 h-4 text-slate-400" />
-          </a>
+              <a
+                href="#explorar"
+                onClick={() => setMobileMenuOpen(false)}
+                className="flex items-center justify-between p-3 rounded-xl bg-white/5 text-slate-100 font-semibold"
+              >
+                <span className="flex items-center gap-2.5">
+                  <MapPin className="w-4 h-4 text-neon" /> Arenas por Proximidade
+                </span>
+                <ChevronRight className="w-4 h-4 text-slate-400" />
+              </a>
+              <a
+                href="#comunidade"
+                onClick={() => setMobileMenuOpen(false)}
+                className="flex items-center justify-between p-3 rounded-xl bg-white/5 text-slate-100 font-semibold"
+              >
+                <span className="flex items-center gap-2.5">
+                  <Users className="w-4 h-4 text-emerald-400" /> Fazer Amizades & Lobbies
+                </span>
+                <ChevronRight className="w-4 h-4 text-slate-400" />
+              </a>
+              <a
+                href="#perfil-gamer"
+                onClick={() => setMobileMenuOpen(false)}
+                className="flex items-center justify-between p-3 rounded-xl bg-white/5 text-slate-100 font-semibold"
+              >
+                <span className="flex items-center gap-2.5">
+                  <Trophy className="w-4 h-4 text-amber-400" /> Perfil Personalizável & OVR
+                </span>
+                <ChevronRight className="w-4 h-4 text-slate-400" />
+              </a>
             </div>
           </motion.div>
         )}

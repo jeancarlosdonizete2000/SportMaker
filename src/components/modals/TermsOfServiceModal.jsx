@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ShieldCheck, FileText, Lock, Users, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { ShieldCheck, FileText, Lock, Users, CheckCircle2, AlertTriangle, Cookie } from 'lucide-react';
 
 const STORAGE_TERMS_KEY = 'sportmaker_terms_accepted_v1';
 
@@ -32,6 +32,7 @@ export default function TermsOfServiceModal() {
         version: '1.0',
       })
     );
+    window.dispatchEvent(new CustomEvent('sportmaker:terms-accepted'));
     setIsOpen(false);
   };
 
@@ -91,6 +92,18 @@ export default function TermsOfServiceModal() {
             }`}
           >
             <Users className="w-3.5 h-3.5" /> Diretrizes da Comunidade
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveDoc('cookies')}
+            className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
+              activeDoc === 'cookies'
+                ? 'bg-cyan-400 text-dark-950'
+                : 'bg-white/5 text-slate-300 hover:bg-white/10'
+            }`}
+          >
+            <Cookie className="w-3.5 h-3.5" /> Política de Cookies
           </button>
         </div>
 
@@ -298,10 +311,41 @@ export default function TermsOfServiceModal() {
               </div>
             </div>
           )}
+
+          {activeDoc === 'cookies' && (
+            <div className="space-y-4">
+              <h3 className="font-display font-black text-lg text-white flex items-center gap-2">
+                <Cookie className="w-5 h-5 text-cyan-400" />
+                POLÍTICA DE COOKIES & AUTENTICAÇÃO SEGURA
+              </h3>
+              <p>
+                O <strong>Sport Maker</strong> utiliza cookies essenciais de autenticação e armazenamento local no navegador para manter sua sessão segura, melhorar o desempenho do aplicativo e lembrar suas preferências de região.
+              </p>
+              <div className="space-y-2">
+                <h4 className="font-bold text-white">1. Cookies Essenciais de Autenticação (JWT)</h4>
+                <p>
+                  Ao realizar login, o servidor emite um token JWT protegido em cookie com as diretivas de segurança <strong>HttpOnly</strong> (inacessível via scripts maliciosos/XSS), <strong>Secure</strong> (trafegado via HTTPS em produção) e <strong>SameSite</strong> (proteção contra ataques CSRF). O navegador envia esse cookie automaticamente nas requisições autenticadas.
+                </p>
+              </div>
+              <div className="space-y-2">
+                <h4 className="font-bold text-white">2. Cookies de Preferências & Desempenho</h4>
+                <p>
+                  Armazenamos localmente sua região selecionada, filtros esportivos e cache temporário de arenas para reduzir o tempo de carregamento das páginas. Não utilizamos cookies de rastreamento publicitário de terceiros.
+                </p>
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Footer Acceptance */}
+        {/* Footer Acceptance + Aviso de Cookies */}
         <div className="p-5 sm:p-6 border-t border-white/10 bg-dark-950/90 space-y-4">
+          <div className="p-3 rounded-2xl bg-cyan-500/10 border border-cyan-400/30 flex items-start gap-2.5 text-xs text-cyan-100">
+            <Cookie className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
+            <p className="leading-relaxed">
+              <strong>Aviso de Cookies:</strong> Utilizamos cookies essenciais (<strong>HttpOnly, Secure e SameSite</strong>) para autenticação segura via JWT e melhoria da sua experiência no Sport Maker.
+            </p>
+          </div>
+
           <label className="flex items-start gap-3 cursor-pointer select-none">
             <input
               type="checkbox"
@@ -311,7 +355,8 @@ export default function TermsOfServiceModal() {
             />
             <span className="text-xs sm:text-sm font-semibold text-white leading-snug">
               Li e concordo integralmente com os <strong>Termos de Uso</strong>, a{' '}
-              <strong>Política de Privacidade (LGPD)</strong> e as{' '}
+              <strong>Política de Privacidade (LGPD)</strong>, a{' '}
+              <strong>Política de Cookies</strong> e as{' '}
               <strong>Diretrizes da Comunidade</strong> do Sport Maker.
             </span>
           </label>

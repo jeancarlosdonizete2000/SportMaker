@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Bell,
@@ -10,7 +10,11 @@ import {
   CheckCircle2,
   UserPlus,
   ChevronRight,
+  Shield,
+  Check,
+  X,
 } from 'lucide-react';
+import { ownerService } from '../../services/ownerService';
 
 export default function NotificationsTab({
   notifications = [],
@@ -18,7 +22,28 @@ export default function NotificationsTab({
   onMarkAllRead,
 }) {
   const navigate = useNavigate();
+  const [respondingTeamId, setRespondingTeamId] = useState(null);
+  const [teamResponses, setTeamResponses] = useState({});
   const unreadCount = notifications.filter((n) => !n.read).length;
+
+  const handleRespondTeamInvite = async (notif, action) => {
+    const teamId = notif.teamId;
+    if (!teamId) return;
+    setRespondingTeamId(teamId);
+    try {
+      const res = await ownerService.respondToTeamInvite(teamId, action);
+      setTeamResponses((prev) => ({
+        ...prev,
+        [notif.id || notif._id]: action === 'accept' ? 'accepted' : 'declined',
+      }));
+      if (!notif.read && onMarkRead) onMarkRead(notif.id || notif._id);
+      if (action === 'accept' && res?.ok) {
+        // feedback inline
+      }
+    } finally {
+      setRespondingTeamId(null);
+    }
+  };
 
   const formatDate = (isoDate) => {
     if (!isoDate) return '';
@@ -83,6 +108,8 @@ export default function NotificationsTab({
             const isMatchInvite = notif.type === 'match_invite';
             const isPaymentRequired = notif.type === 'match_payment_required';
             const isRequestAccepted = notif.type === 'match_request_accepted';
+            const isTeamInvite = notif.type === 'team_invite';
+            const teamResp = teamResponses[notif.id || notif._id];
             const hasMatchAction = Boolean(
               notif.matchId &&
                 (isJoinRequest ||
@@ -124,6 +151,8 @@ export default function NotificationsTab({
                     >
                       {isCancelled ? (
                         <AlertTriangle className="w-5 h-5" />
+                      ) : isTeamInvite ? (
+                        <Shield className="w-5 h-5" />
                       ) : isJoinRequest || isMatchInvite ? (
                         <UserPlus className="w-5 h-5" />
                       ) : (
@@ -154,6 +183,47 @@ export default function NotificationsTab({
                       <p className="text-xs sm:text-sm text-slate-200 leading-relaxed">
                         {notif.message}
                       </p>
+
+                      {isTeamInvite && notif.teamId && (
+                        <div className="flex flex-wrap items-center gap-2 pt-1.5">
+                          {teamResp === 'accepted' ? (
+                            <span className="text-xs font-bold text-emerald-400 flex items-center gap-1">
+                              <CheckCircle2 className="w-4 h-4" /> Convocação aceita! Você já está no time.
+                            </span>
+                          ) : teamResp === 'declined' ? (
+                            <span className="text-xs font-bold text-slate-400">
+                              Convocação recusada.
+                            </span>
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                disabled={respondingTeamId === notif.teamId}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleRespondTeamInvite(notif, 'accept');
+                                }}
+                                className="px-4 py-2 rounded-xl bg-emerald-400 hover:bg-emerald-300 text-dark-950 text-xs font-display font-extrabold flex items-center gap-1.5 transition-all"
+                              >
+                                <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                                <span>Aceitar Convocação</span>
+                              </button>
+                              <button
+                                type="button"
+                                disabled={respondingTeamId === notif.teamId}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleRespondTeamInvite(notif, 'decline');
+                                }}
+                                className="px-3.5 py-2 rounded-xl bg-white/5 hover:bg-red-500/20 text-slate-300 hover:text-red-300 border border-white/10 text-xs font-bold flex items-center gap-1.5 transition-all"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                                <span>Recusar</span>
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      )}
 
                       {(notif.arenaName || notif.dateLabel || notif.refundAmount > 0 || ((isJoinRequest || isMatchInvite) && notif.matchId)) && (
                         <div className="flex flex-wrap items-center gap-2 pt-1">

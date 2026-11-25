@@ -255,7 +255,7 @@ export default function ProfileTab() {
           <div className="glass-card rounded-3xl p-6 sm:p-8 border border-white/15">
             <div className="flex flex-col md:flex-row items-center md:items-center justify-center gap-6 md:gap-12">
               {/* Player Card Oficial (Intacto: compacto c/ animação no mobile, completo no desktop) */}
-              <div className="shrink-0 flex justify-center">
+              <div className="w-full md:w-[380px] lg:w-[400px] shrink-0 flex justify-center">
                 <PlayerCard
                   player={basePlayer}
                   theme={currentTheme}
@@ -268,6 +268,11 @@ export default function ProfileTab() {
                 {/* Nickname, Nome e Bio Esportiva */}
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-center md:justify-start gap-2.5 flex-wrap">
+                    {user?.teamTag && (
+                      <span className="px-2 py-0.5 rounded-lg bg-neon/15 border border-neon/40 text-neon font-display font-black text-xs tracking-wider uppercase">
+                        [{user.teamTag}]
+                      </span>
+                    )}
                     <h1 className="font-display font-black text-2xl sm:text-3xl text-white">
                       {nickname.trim() ? `@${nickname.trim()}` : basePlayer.name}
                     </h1>
@@ -616,7 +621,7 @@ export default function ProfileTab() {
                       <option value="Zagueiro / Fixo • Futebol / Futsal">Zagueiro / Fixo (ZAG) • Futebol / Futsal</option>
                       <option value="Goleiro • Futebol / Society">Goleiro (GOL) • Futebol / Society</option>
                       <option value="Beach Tennis">Beach Tennis (BT)</option>
-                      <option value="Padel / Tênis">Padel / Tênis (PDL)</option>
+                      <option value="Vôlei">Vôlei (VOL)</option>
                       <option value="Futevôlei">Futevôlei (FTV)</option>
                     </select>
                   </div>

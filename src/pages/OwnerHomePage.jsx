@@ -185,6 +185,7 @@ export default function OwnerHomePage() {
                     }
                     onToggleSlotStatus={handleToggleSlotStatus}
                     onUpdateBookingStatus={handleUpdateBookingStatus}
+                    onCreateBooking={handleConfirmNewBooking}
                   />
                 }
               />
