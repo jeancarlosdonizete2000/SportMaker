@@ -421,6 +421,35 @@ const BookingSchema = new mongoose.Schema(
 
 const Booking = mongoose.models.Booking || mongoose.model('Booking', BookingSchema);
 
+// Schema Mongoose para Lançamentos Financeiros do Proprietário (Bar, Escolinha, Produtos, Manutenções)
+const OwnerFinanceEntrySchema = new mongoose.Schema(
+  {
+    ownerId: { type: String, required: true, index: true },
+    arenaId: { type: String, default: '' },
+    arenaName: { type: String, default: '' },
+    type: {
+      type: String,
+      enum: ['income', 'expense'],
+      required: true,
+    },
+    category: {
+      type: String,
+      enum: ['bar', 'escolinha', 'produtos', 'manutencao', 'outros_ganhos', 'outras_despesas'],
+      default: 'bar',
+    },
+    title: { type: String, required: true, trim: true },
+    amount: { type: Number, required: true, min: 0 },
+    dateIso: { type: String, required: true }, // YYYY-MM-DD
+    paymentMethod: { type: String, default: 'Pix' },
+    notes: { type: String, default: '' },
+  },
+  { timestamps: true }
+);
+
+const OwnerFinanceEntry =
+  mongoose.models.OwnerFinanceEntry ||
+  mongoose.model('OwnerFinanceEntry', OwnerFinanceEntrySchema);
+
 // Schema Mongoose para Notificações dos Usuários (Cancelamentos, Reembolsos, Convites)
 const NotificationSchema = new mongoose.Schema(
   {
@@ -1252,9 +1281,12 @@ app.get('/api/owner/dashboard', async (req, res) => {
     }
 
     const arenas = await ensureOwnerDefaultArenaAndBookings(ownerUser);
-    const bookings = await Booking.find({ ownerId: String(ownerUser._id) }).sort({
-      createdAt: -1,
-    });
+    const [bookings, financeEntries] = await Promise.all([
+      Booking.find({ ownerId: String(ownerUser._id) }).sort({ createdAt: -1 }),
+      OwnerFinanceEntry.find({ ownerId: String(ownerUser._id) })
+        .sort({ dateIso: -1, createdAt: -1 })
+        .lean(),
+    ]);
 
     const activeBookings = bookings.filter((b) => b.bookingStatus !== 'cancelled');
     const paidBookings = activeBookings.filter((b) => b.paymentStatus === 'paid');
@@ -1265,11 +1297,25 @@ app.get('/api/owner/dashboard', async (req, res) => {
     const productsRevenue = paidBookings.reduce((sum, b) => sum + (b.productsAmount || 0), 0);
     const pendingRevenue = pendingBookings.reduce((sum, b) => sum + (b.totalAmount || 0), 0);
 
+    const extraIncome = financeEntries
+      .filter((e) => e.type === 'income')
+      .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+    const totalExpenses = financeEntries
+      .filter((e) => e.type === 'expense')
+      .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+    const grossRevenue = totalRevenue + extraIncome;
+    const netProfit = grossRevenue - totalExpenses;
+
     return res.json({
       arenas,
       bookings,
+      financeEntries,
       metrics: {
         totalRevenue,
+        grossRevenue,
+        extraIncome,
+        totalExpenses,
+        netProfit,
         courtRevenue,
         productsRevenue,
         pendingRevenue,
@@ -1281,6 +1327,75 @@ app.get('/api/owner/dashboard', async (req, res) => {
     });
   } catch (err) {
     return res.status(500).json({ message: err.message || 'Erro ao carregar painel do proprietário.' });
+  }
+});
+
+// POST /api/owner/finance - Registra uma receita extra (bar, escolinha) ou despesa (produtos, manutenção)
+app.post('/api/owner/finance', async (req, res) => {
+  try {
+    const decoded = getAuthenticatedUserFromReq(req);
+    if (!decoded || !decoded.sub) {
+      return res.status(401).json({ message: 'Não autorizado.' });
+    }
+
+    const {
+      arenaId = '',
+      arenaName = '',
+      type,
+      category,
+      title,
+      amount,
+      dateIso,
+      paymentMethod = 'Pix',
+      notes = '',
+    } = req.body || {};
+
+    if (!['income', 'expense'].includes(type)) {
+      return res.status(400).json({ message: 'Tipo de lançamento inválido (income ou expense).' });
+    }
+    const parsedAmount = Number(amount);
+    if (Number.isNaN(parsedAmount) || parsedAmount <= 0) {
+      return res.status(400).json({ message: 'Informe um valor maior que zero.' });
+    }
+    if (!String(title || '').trim()) {
+      return res.status(400).json({ message: 'Informe uma descrição para o lançamento.' });
+    }
+
+    const entry = await OwnerFinanceEntry.create({
+      ownerId: String(decoded.sub),
+      arenaId: String(arenaId || ''),
+      arenaName: String(arenaName || ''),
+      type,
+      category: category || (type === 'income' ? 'bar' : 'produtos'),
+      title: String(title).trim(),
+      amount: parsedAmount,
+      dateIso: dateIso || getServerTodayIso(),
+      paymentMethod: String(paymentMethod || 'Pix'),
+      notes: String(notes || '').trim(),
+    });
+
+    return res.status(201).json({ entry });
+  } catch (err) {
+    return res.status(500).json({ message: err.message || 'Erro ao salvar lançamento financeiro.' });
+  }
+});
+
+// DELETE /api/owner/finance/:id - Remove um lançamento financeiro do proprietário
+app.delete('/api/owner/finance/:id', async (req, res) => {
+  try {
+    const decoded = getAuthenticatedUserFromReq(req);
+    if (!decoded || !decoded.sub) {
+      return res.status(401).json({ message: 'Não autorizado.' });
+    }
+
+    await OwnerFinanceEntry.findOneAndDelete({
+      _id: req.params.id,
+      ownerId: String(decoded.sub),
+    });
+
+    return res.json({ ok: true });
+  } catch (err) {
+    return res.status(500).json({ message: err.message || 'Erro ao excluir lançamento financeiro.' });
   }
 });
 

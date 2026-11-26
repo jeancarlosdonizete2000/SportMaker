@@ -180,6 +180,42 @@ export const ownerService = {
   },
 
   /**
+   * Registra um lançamento financeiro do proprietário (venda no bar, aula de escolinha, gastos com produtos, manutenção)
+   */
+  async createFinanceEntry(entryPayload) {
+    const response = await fetch(`${MONGO_CONFIG.restApiUrl}/owner/finance`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(entryPayload),
+    });
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data.message || 'Erro ao registrar lançamento financeiro.');
+    }
+
+    clientCache.invalidate('owner_dashboard', { userScoped: true });
+    return data.entry;
+  },
+
+  /**
+   * Remove um lançamento financeiro do proprietário
+   */
+  async deleteFinanceEntry(entryId) {
+    const response = await fetch(`${MONGO_CONFIG.restApiUrl}/owner/finance/${entryId}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data.message || 'Erro ao excluir lançamento financeiro.');
+    }
+
+    clientCache.invalidate('owner_dashboard', { userScoped: true });
+    return true;
+  },
+
+  /**
    * Atualiza o status de pagamento ou da reserva no MongoDB e limpa cache do painel
    */
   async updateBookingStatus(bookingId, statusUpdates) {

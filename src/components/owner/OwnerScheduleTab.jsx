@@ -38,42 +38,35 @@ const WEEKDAYS_PT = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 const EVENT_COLORS = [
   {
     id: 'red',
-    label: 'Vermelho (Manutenção)',
+    label: 'Manutenção',
     dot: 'bg-red-500',
     card: 'bg-red-500/15 border-red-500/50 text-red-200',
     badge: 'bg-red-500/25 text-red-300',
   },
   {
-    id: 'amber',
-    label: 'Âmbar (Evento / Torneio)',
-    dot: 'bg-amber-400',
-    card: 'bg-amber-400/15 border-amber-400/50 text-amber-200',
-    badge: 'bg-amber-400/25 text-amber-300',
-  },
-  {
     id: 'blue',
-    label: 'Azul (Aula / Escolinha)',
+    label: 'Marcado pelo Proprietário',
     dot: 'bg-blue-400',
     card: 'bg-blue-500/15 border-blue-400/50 text-blue-200',
     badge: 'bg-blue-500/25 text-blue-300',
   },
   {
+    id: 'amber',
+    label: 'Mensalista Fixo',
+    dot: 'bg-amber-400',
+    card: 'bg-amber-400/15 border-amber-400/50 text-amber-200',
+    badge: 'bg-amber-400/25 text-amber-300',
+  },
+  {
     id: 'purple',
-    label: 'Roxo (Reserva Privada)',
+    label: 'Aula de Escolinha',
     dot: 'bg-purple-400',
     card: 'bg-purple-500/15 border-purple-400/50 text-purple-200',
     badge: 'bg-purple-500/25 text-purple-300',
   },
   {
-    id: 'cyan',
-    label: 'Ciano (Mensalista)',
-    dot: 'bg-cyan-400',
-    card: 'bg-cyan-500/15 border-cyan-400/50 text-cyan-200',
-    badge: 'bg-cyan-500/25 text-cyan-300',
-  },
-  {
     id: 'emerald',
-    label: 'Verde (Reserva Atleta)',
+    label: 'Marcado por Outros Usuários',
     dot: 'bg-emerald-400',
     card: 'bg-emerald-500/15 border-emerald-400/50 text-emerald-200',
     badge: 'bg-emerald-500/25 text-emerald-300',
@@ -82,14 +75,21 @@ const EVENT_COLORS = [
 
 const QUICK_COMMITMENTS = [
   { title: 'Manutenção da Quadra', color: 'red' },
-  { title: 'Torneio / Campeonato', color: 'amber' },
-  { title: 'Aula / Escolinha', color: 'blue' },
-  { title: 'Mensalista Fixo', color: 'cyan' },
-  { title: 'Evento Privado', color: 'purple' },
+  { title: 'Reserva pelo Proprietário', color: 'blue' },
+  { title: 'Mensalista Fixo', color: 'amber' },
+  { title: 'Aula de Escolinha', color: 'purple' },
 ];
 
+function resolveAutomaticEventColor(title = '', isOwnerCreated = true) {
+  const lower = String(title || '').toLowerCase();
+  if (lower.includes('manuten')) return 'red';
+  if (lower.includes('mensalist')) return 'amber';
+  if (lower.includes('aula') || lower.includes('escolinha')) return 'purple';
+  return isOwnerCreated ? 'blue' : 'emerald';
+}
+
 function getColorStyle(colorId) {
-  return EVENT_COLORS.find((c) => c.id === colorId) || EVENT_COLORS[5];
+  return EVENT_COLORS.find((c) => c.id === colorId) || EVENT_COLORS[4];
 }
 
 function toIsoDate(year, monthIndex, day) {
@@ -136,6 +136,7 @@ export default function OwnerScheduleTab({
   onOpenNewBookingModal,
   onUpdateBookingStatus,
   onCreateBooking,
+  onCreateFinanceEntry,
 }) {
   const [selectedArenaId, setSelectedArenaId] = useState(arenas[0]?._id || '');
   const currentArena =
@@ -160,6 +161,7 @@ export default function OwnerScheduleTab({
   const [eventTitle, setEventTitle] = useState('Manutenção da Quadra');
   const [eventColor, setEventColor] = useState('red');
   const [eventNotes, setEventNotes] = useState('');
+  const [eventAmount, setEventAmount] = useState('');
   const [savingSlot, setSavingSlot] = useState(false);
 
   const arenaBookings = useMemo(
@@ -228,11 +230,13 @@ export default function OwnerScheduleTab({
           (existing.bookingStatus === 'manual_block' ? 'red' : 'emerald')
       );
       setEventNotes(existing.notes || '');
+      setEventAmount('');
     } else {
       setSlotMode('commitment');
       setEventTitle('Manutenção da Quadra');
       setEventColor('red');
       setEventNotes('');
+      setEventAmount('');
     }
   };
 
@@ -253,17 +257,22 @@ export default function OwnerScheduleTab({
         return;
       }
 
-      // Se já existia um compromisso anterior neste horário, atualiza diretamente (mantendo o registro e aplicando a nova cor/título)
+      // Se já existia um compromisso anterior neste horário, atualiza diretamente (mantendo o registro e aplicando a cor automática)
       if (existingBooking && onUpdateBookingStatus) {
+        const autoEditColor = resolveAutomaticEventColor(eventTitle, true);
         await onUpdateBookingStatus(existingBooking._id, {
           bookingStatus: existingBooking.bookingStatus === 'cancelled' ? 'manual_block' : existingBooking.bookingStatus,
           eventTitle: eventTitle.trim() || 'Compromisso / Manutenção',
-          eventColor,
+          eventColor: autoEditColor,
           notes: eventNotes.trim(),
         });
         setSlotModal(null);
         return;
       }
+
+      const parsedAmount = Number(String(eventAmount || '').replace(',', '.')) || 0;
+      const autoColor = resolveAutomaticEventColor(eventTitle, true);
+      const isMaintenance = autoColor === 'red';
 
       if (onCreateBooking) {
         await onCreateBooking({
@@ -276,16 +285,32 @@ export default function OwnerScheduleTab({
           slotTime: time,
           customerName: eventTitle.trim() || 'Compromisso / Manutenção',
           customerPhone: 'Agenda do Proprietário',
-          courtAmount: 0,
+          courtAmount: isMaintenance ? 0 : parsedAmount,
           productsAmount: 0,
           paymentMethod: 'Presencial',
           paymentStatus: 'paid',
           bookingStatus: 'manual_block',
           eventTitle: eventTitle.trim() || 'Compromisso / Manutenção',
-          eventColor,
+          eventColor: autoColor,
           notes: eventNotes.trim(),
         });
       }
+
+      // Manutenção com valor gasto é lançada como Despesa no Financeiro (não entra como receita no Extrato de Reservas)
+      if (onCreateFinanceEntry && isMaintenance && parsedAmount > 0) {
+        await onCreateFinanceEntry({
+          arenaId: currentArena._id,
+          arenaName: currentArena.name,
+          type: 'expense',
+          category: 'manutencao',
+          title: `${eventTitle.trim() || 'Manutenção da Quadra'} • ${activeCourt.name} (${time})`,
+          amount: parsedAmount,
+          dateIso: selectedDateIso,
+          paymentMethod: 'Presencial',
+          notes: eventNotes.trim(),
+        });
+      }
+
       setSlotModal(null);
     } finally {
       setSavingSlot(false);
@@ -429,16 +454,21 @@ export default function OwnerScheduleTab({
             </div>
 
             {/* Legenda de Cores */}
-            <div className="pt-3 border-t border-white/10 flex flex-wrap gap-2">
-              {EVENT_COLORS.map((c) => (
-                <span
-                  key={c.id}
-                  className="text-[10px] text-slate-300 flex items-center gap-1"
-                >
-                  <span className={`w-2 h-2 rounded-full ${c.dot}`} />
-                  {c.label.split(' ')[0]}
-                </span>
-              ))}
+            <div className="pt-3 border-t border-white/10 space-y-2">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                Legenda de Cores da Agenda
+              </span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                {EVENT_COLORS.map((c) => (
+                  <span
+                    key={c.id}
+                    className="text-[11px] text-slate-200 flex items-center gap-1.5"
+                  >
+                    <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${c.dot}`} />
+                    <span>{c.label}</span>
+                  </span>
+                ))}
+              </div>
             </div>
           </div>
 
@@ -735,34 +765,50 @@ export default function OwnerScheduleTab({
                     type="text"
                     required
                     value={eventTitle}
-                    onChange={(e) => setEventTitle(e.target.value)}
-                    placeholder="Ex: Manutenção da grama, Torneio, Aula..."
+                    onChange={(e) => {
+                      const nextTitle = e.target.value;
+                      setEventTitle(nextTitle);
+                      setEventColor(resolveAutomaticEventColor(nextTitle, true));
+                    }}
+                    placeholder="Ex: Manutenção, Mensalista Fixo, Aula de Escolinha..."
                     className="w-full bg-dark-950 border border-white/15 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-neon"
                   />
                 </div>
 
-                {/* Seletor de Cor do Compromisso */}
+                {/* Cor Automática na Agenda */}
+                <div className="p-3 rounded-xl bg-dark-950 border border-white/10 flex items-center justify-between gap-2">
+                  <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                    <Palette className="w-3.5 h-3.5 text-neon" /> Cor Automática:
+                  </span>
+                  <span
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1.5 ${
+                      getColorStyle(resolveAutomaticEventColor(eventTitle, true)).badge
+                    }`}
+                  >
+                    <span
+                      className={`w-2.5 h-2.5 rounded-full ${
+                        getColorStyle(resolveAutomaticEventColor(eventTitle, true)).dot
+                      }`}
+                    />
+                    {getColorStyle(resolveAutomaticEventColor(eventTitle, true)).label}
+                  </span>
+                </div>
+
                 <div>
-                  <label className="block text-xs font-bold text-slate-300 mb-2 flex items-center gap-1.5">
-                    <Palette className="w-3.5 h-3.5 text-neon" /> Cor na Agenda:
+                  <label className="block text-xs font-bold text-slate-300 mb-1.5">
+                    {eventColor === 'red' || /manuten/i.test(eventTitle || '')
+                      ? 'Valor Gasto na Manutenção — R$ (opcional, lança em Despesas):'
+                      : 'Valor Recebido — R$ (opcional, lança em Receitas):'}
                   </label>
-                  <div className="grid grid-cols-3 gap-2">
-                    {EVENT_COLORS.map((c) => (
-                      <button
-                        key={c.id}
-                        type="button"
-                        onClick={() => setEventColor(c.id)}
-                        className={`px-2.5 py-2 rounded-xl border text-[11px] font-bold flex items-center gap-1.5 transition-all ${
-                          eventColor === c.id
-                            ? 'border-neon bg-neon/10 text-white'
-                            : 'border-white/10 bg-dark-950 text-slate-300 hover:border-white/30'
-                        }`}
-                      >
-                        <span className={`w-3 h-3 rounded-full shrink-0 ${c.dot}`} />
-                        <span className="truncate">{c.label.split(' ')[0]}</span>
-                      </button>
-                    ))}
-                  </div>
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={eventAmount}
+                    onChange={(e) => setEventAmount(e.target.value)}
+                    placeholder="Ex: 350,00"
+                    className="w-full bg-dark-950 border border-white/15 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-neon"
+                  />
                 </div>
 
                 <div>

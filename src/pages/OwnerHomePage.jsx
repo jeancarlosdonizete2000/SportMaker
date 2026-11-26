@@ -27,10 +27,17 @@ export default function OwnerHomePage() {
   const cachedDash = ownerService.getCachedOwnerDashboard();
   const [arenas, setArenas] = useState(() => cachedDash?.arenas || []);
   const [bookings, setBookings] = useState(() => cachedDash?.bookings || []);
+  const [financeEntries, setFinanceEntries] = useState(
+    () => cachedDash?.financeEntries || []
+  );
   const [metrics, setMetrics] = useState(
     () =>
       cachedDash?.metrics || {
         totalRevenue: 0,
+        grossRevenue: 0,
+        extraIncome: 0,
+        totalExpenses: 0,
+        netProfit: 0,
         courtRevenue: 0,
         productsRevenue: 0,
         pendingRevenue: 0,
@@ -48,6 +55,7 @@ export default function OwnerHomePage() {
       const data = await ownerService.getDashboardData({ forceRefresh });
       setArenas(data.arenas || []);
       setBookings(data.bookings || []);
+      setFinanceEntries(data.financeEntries || []);
       if (data.metrics) setMetrics(data.metrics);
     } catch {
       // Caso o servidor esteja reconectando
@@ -94,6 +102,16 @@ export default function OwnerHomePage() {
 
   const handleUpdateBookingStatus = async (bookingId, statusUpdates) => {
     await ownerService.updateBookingStatus(bookingId, statusUpdates);
+    await loadOwnerDashboard(true);
+  };
+
+  const handleCreateFinanceEntry = async (entryPayload) => {
+    await ownerService.createFinanceEntry(entryPayload);
+    await loadOwnerDashboard(true);
+  };
+
+  const handleDeleteFinanceEntry = async (entryId) => {
+    await ownerService.deleteFinanceEntry(entryId);
     await loadOwnerDashboard(true);
   };
 
@@ -165,12 +183,15 @@ export default function OwnerHomePage() {
                   <OwnerEarningsTab
                     arenas={arenas}
                     bookings={bookings}
+                    financeEntries={financeEntries}
                     metrics={metrics}
                     onGoToSchedule={() => navigate('/proprietario/horarios')}
                     onGoToArenas={() => navigate('/proprietario/arenas')}
                     onMarkBookingPaid={(id) =>
                       handleUpdateBookingStatus(id, { paymentStatus: 'paid' })
                     }
+                    onCreateFinanceEntry={handleCreateFinanceEntry}
+                    onDeleteFinanceEntry={handleDeleteFinanceEntry}
                   />
                 }
               />
@@ -186,6 +207,7 @@ export default function OwnerHomePage() {
                     onToggleSlotStatus={handleToggleSlotStatus}
                     onUpdateBookingStatus={handleUpdateBookingStatus}
                     onCreateBooking={handleConfirmNewBooking}
+                    onCreateFinanceEntry={handleCreateFinanceEntry}
                   />
                 }
               />

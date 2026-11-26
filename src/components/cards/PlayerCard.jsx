@@ -193,15 +193,15 @@ export default function PlayerCard({ player, theme, customTag, alwaysExpanded = 
   // Máscara pixel-perfect para que o brilho prismático siga o contorno exato da carta .webp
   const prismaticMaskStyle = theme.bgImage
     ? {
-        WebkitMaskImage: `url(${theme.bgImage})`,
-        maskImage: `url(${theme.bgImage})`,
-        WebkitMaskSize: '100% 100%',
-        maskSize: '100% 100%',
-        WebkitMaskRepeat: 'no-repeat',
-        maskRepeat: 'no-repeat',
-        WebkitMaskPosition: 'center',
-        maskPosition: 'center',
-      }
+      WebkitMaskImage: `url(${theme.bgImage})`,
+      maskImage: `url(${theme.bgImage})`,
+      WebkitMaskSize: '100% 100%',
+      maskSize: '100% 100%',
+      WebkitMaskRepeat: 'no-repeat',
+      maskRepeat: 'no-repeat',
+      WebkitMaskPosition: 'center',
+      maskPosition: 'center',
+    }
     : undefined;
 
   const renderDetailsContent = () => (
@@ -295,17 +295,13 @@ export default function PlayerCard({ player, theme, customTag, alwaysExpanded = 
         touchAction: isProCard && isHolding ? 'none' : 'pan-y',
       }}
       transition={{ type: 'spring', stiffness: 300, damping: 26 }}
-      className={`relative w-full mx-auto select-none group ${
-        isProCard ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer md:cursor-default'
-      } ${
-        theme.bgImage
-          ? `${
-              isMobileExpanded ? 'max-w-[350px] scale-[1.02]' : 'max-w-[235px]'
-            } md:scale-100 md:max-w-[400px]`
-          : `${
-              isMobileExpanded ? 'max-w-[330px] scale-[1.02]' : 'max-w-[220px]'
-            } md:scale-100 md:max-w-[360px]`
-      }`}
+      className={`relative w-full mx-auto select-none group ${isProCard ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer md:cursor-default'
+        } ${theme.bgImage
+          ? `${isMobileExpanded ? 'max-w-[350px] scale-[1.02]' : 'max-w-[235px]'
+          } md:scale-100 md:max-w-[400px]`
+          : `${isMobileExpanded ? 'max-w-[330px] scale-[1.02]' : 'max-w-[220px]'
+          } md:scale-100 md:max-w-[360px]`
+        }`}
     >
       {/* Wrapper 3D com Inclinação Prismática (Cards PRO) */}
       <motion.div
@@ -313,17 +309,17 @@ export default function PlayerCard({ player, theme, customTag, alwaysExpanded = 
         style={
           isProCard
             ? {
-                rotateX,
-                rotateY,
-                transformStyle: 'preserve-3d',
-              }
+              rotateX,
+              rotateY,
+              transformStyle: 'preserve-3d',
+            }
             : undefined
         }
         animate={
           isProCard
             ? {
-                scale: isHolding ? 1.04 : 1,
-              }
+              scale: isHolding ? 1.04 : 1,
+            }
             : undefined
         }
         transition={{ type: 'spring', stiffness: 300, damping: 24 }}
@@ -332,13 +328,12 @@ export default function PlayerCard({ player, theme, customTag, alwaysExpanded = 
         {/* Aura Prismática Externa para Cards PRO (ativa apenas ao interagir/segurar) */}
         {prismaticConfig.hasGlow && (
           <div
-            className={`absolute -inset-2.5 rounded-[40px] bg-gradient-to-tr ${prismaticConfig.auraGradient} blur-2xl pointer-events-none transition-opacity duration-300 ${
-              isHolding
+            className={`absolute -inset-2.5 rounded-[40px] bg-gradient-to-tr ${prismaticConfig.auraGradient} blur-2xl pointer-events-none transition-opacity duration-300 ${isHolding
                 ? 'opacity-65'
                 : isInteracting
                   ? 'opacity-45'
                   : 'opacity-0'
-            }`}
+              }`}
             style={{
               WebkitMaskImage:
                 'linear-gradient(to bottom, transparent 0%, black 18%, black 85%, transparent 100%)',
@@ -355,19 +350,18 @@ export default function PlayerCard({ player, theme, customTag, alwaysExpanded = 
           className={
             theme.bgImage
               ? 'relative transition-all duration-300'
-              : `fc-card-shield p-[3px] transition-all duration-300 ${
-                  isGold
-                    ? 'bg-gradient-to-b from-amber-200 via-yellow-500 to-amber-700'
-                    : isLightning
-                      ? 'bg-gradient-to-b from-cyan-200 via-sky-400 to-blue-700 fc-electric-card'
-                      : isFire
-                        ? 'bg-gradient-to-b from-amber-300 via-orange-500 to-red-700 fc-fire-card'
-                        : theme.id === 'emerald-pro'
-                          ? 'bg-gradient-to-b from-emerald-300 via-emerald-500 to-teal-900'
-                          : theme.id === 'silver-slate'
-                            ? 'bg-gradient-to-b from-slate-200 via-slate-400 to-slate-800'
-                            : 'bg-gradient-to-b from-neon via-lime-500 to-emerald-900'
-                } ${theme.glow}`
+              : `fc-card-shield p-[3px] transition-all duration-300 ${isGold
+                ? 'bg-gradient-to-b from-amber-200 via-yellow-500 to-amber-700'
+                : isLightning
+                  ? 'bg-gradient-to-b from-cyan-200 via-sky-400 to-blue-700 fc-electric-card'
+                  : isFire
+                    ? 'bg-gradient-to-b from-amber-300 via-orange-500 to-red-700 fc-fire-card'
+                    : theme.id === 'emerald-pro'
+                      ? 'bg-gradient-to-b from-emerald-300 via-emerald-500 to-teal-900'
+                      : theme.id === 'silver-slate'
+                        ? 'bg-gradient-to-b from-slate-200 via-slate-400 to-slate-800'
+                        : 'bg-gradient-to-b from-neon via-lime-500 to-emerald-900'
+              } ${theme.glow}`
           }
         >
           {/* Interior do Escudo EA FC */}
@@ -376,23 +370,21 @@ export default function PlayerCard({ player, theme, customTag, alwaysExpanded = 
             transition={{ type: 'spring', stiffness: 300, damping: 26 }}
             className={
               theme.bgImage
-                ? `relative overflow-hidden text-white flex flex-col justify-between ${
-                    isMobileExpanded
-                      ? 'pt-9 pb-14 px-7 min-h-[480px]'
-                      : 'pt-6 pb-8 px-5 min-h-[250px]'
-                  } md:pt-10 md:pb-16 md:px-9 md:min-h-[540px]`
-                : `fc-card-shield relative overflow-hidden bg-gradient-to-b ${theme.gradient} ${
-                    isMobileExpanded ? 'pt-6 pb-10 px-5' : 'pt-4 pb-6 px-4'
-                  } md:pt-6 md:pb-11 md:px-6 text-white`
+                ? `relative overflow-hidden text-white flex flex-col justify-between ${isMobileExpanded
+                  ? 'pt-9 pb-14 px-7 min-h-[480px]'
+                  : 'pt-6 pb-8 px-5 min-h-[250px]'
+                } md:pt-10 md:pb-16 md:px-9 md:min-h-[540px]`
+                : `fc-card-shield relative overflow-hidden bg-gradient-to-b ${theme.gradient} ${isMobileExpanded ? 'pt-6 pb-10 px-5' : 'pt-4 pb-6 px-4'
+                } md:pt-6 md:pb-11 md:px-6 text-white`
             }
             style={
               theme.bgImage
                 ? {
-                    backgroundImage: `url(${theme.bgImage})`,
-                    backgroundSize: '100% 100%',
-                    backgroundPosition: 'center',
-                    backgroundRepeat: 'no-repeat',
-                  }
+                  backgroundImage: `url(${theme.bgImage})`,
+                  backgroundSize: '100% 100%',
+                  backgroundPosition: 'center',
+                  backgroundRepeat: 'no-repeat',
+                }
                 : undefined
             }
           >
@@ -417,9 +409,8 @@ export default function PlayerCard({ player, theme, customTag, alwaysExpanded = 
               {/* Coluna Esquerda Estilo FUT */}
               <div className="col-span-4 flex flex-col items-center text-center border-r border-white/15 pr-2 space-y-1 md:space-y-1.5">
                 <span
-                  className={`font-display font-black ${
-                    isMobileExpanded ? 'text-4xl' : 'text-3xl'
-                  } md:text-5xl leading-none tracking-tighter drop-shadow-[0_2px_10px_rgba(0,0,0,0.8)] ${theme.accentText}`}
+                  className={`font-display font-black ${isMobileExpanded ? 'text-4xl' : 'text-3xl'
+                    } md:text-5xl leading-none tracking-tighter drop-shadow-[0_2px_10px_rgba(0,0,0,0.8)] ${theme.accentText}`}
                 >
                   {player.ovr > 0 ? player.ovr : '—'}
                 </span>
@@ -455,47 +446,42 @@ export default function PlayerCard({ player, theme, customTag, alwaysExpanded = 
                       onError={() => setAvatarError(true)}
                       className={
                         theme.bgImage
-                          ? `w-full ${
-                              isMobileExpanded ? 'h-52' : 'h-40'
-                            } md:h-60 object-contain object-bottom scale-110 transition-all duration-300 drop-shadow-[0_12px_20px_rgba(0,0,0,0.7)]`
-                          : `w-full ${
-                              isMobileExpanded ? 'h-44' : 'h-32'
-                            } md:h-48 rounded-2xl object-cover object-top border-2 shadow-2xl transition-all duration-300 ${
-                              isGold
-                                ? 'border-amber-300'
-                                : isLightning
-                                  ? 'border-cyan-300'
-                                  : isFire
-                                    ? 'border-orange-400'
-                                    : 'border-white/25'
-                            }`
+                          ? `w-full ${isMobileExpanded ? 'h-52' : 'h-40'
+                          } md:h-60 object-contain object-bottom scale-110 transition-all duration-300 drop-shadow-[0_12px_20px_rgba(0,0,0,0.7)]`
+                          : `w-full ${isMobileExpanded ? 'h-44' : 'h-32'
+                          } md:h-48 rounded-2xl object-cover object-top border-2 shadow-2xl transition-all duration-300 ${isGold
+                            ? 'border-amber-300'
+                            : isLightning
+                              ? 'border-cyan-300'
+                              : isFire
+                                ? 'border-orange-400'
+                                : 'border-white/25'
+                          }`
                       }
                       style={{
                         transform: `scale(${(player.avatarScale || 100) / 100})`,
                         transformOrigin: 'center bottom',
                         ...(theme.bgImage
                           ? {
-                              WebkitMaskImage:
-                                'linear-gradient(to bottom, black 70%, transparent 100%)',
-                              maskImage:
-                                'linear-gradient(to bottom, black 70%, transparent 100%)',
-                            }
+                            WebkitMaskImage:
+                              'linear-gradient(to bottom, black 70%, transparent 100%)',
+                            maskImage:
+                              'linear-gradient(to bottom, black 70%, transparent 100%)',
+                          }
                           : {}),
                       }}
                     />
                   ) : (
                     <div
-                      className={`${
-                        isMobileExpanded ? 'w-28 h-28' : 'w-24 h-24'
-                      } md:w-32 md:h-32 rounded-2xl bg-dark-950/90 border-2 flex flex-col items-center justify-center shadow-2xl transition-all duration-300 ${
-                        isGold
+                      className={`${isMobileExpanded ? 'w-28 h-28' : 'w-24 h-24'
+                        } md:w-32 md:h-32 rounded-2xl bg-dark-950/90 border-2 flex flex-col items-center justify-center shadow-2xl transition-all duration-300 ${isGold
                           ? 'border-amber-300 text-amber-300'
                           : isLightning
                             ? 'border-cyan-300 text-cyan-300'
                             : isFire
                               ? 'border-orange-400 text-orange-400'
                               : 'border-white/25 text-neon'
-                      }`}
+                        }`}
                     >
                       <span className="font-display font-black text-2xl md:text-3xl">
                         {player.name ? initials : <User className="w-8 h-8 md:w-10 md:h-10" />}
